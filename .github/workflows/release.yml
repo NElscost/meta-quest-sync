@@ -1,0 +1,38 @@
+name: Release Meta Quest Sync
+
+on:
+  push:
+    tags:
+      - "*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Build and test
+        run: |
+          npm ci
+          npm run build
+          npm test
+      - name: Verify tag
+        run: |
+          VERSION=$(node -p "require('./manifest.json').version")
+          test "$GITHUB_REF_NAME" = "$VERSION"
+      - name: Package
+        run: zip meta-quest-sync.zip main.js manifest.json styles.css
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            meta-quest-sync.zip
+            main.js
+            manifest.json
+            styles.css

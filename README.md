@@ -38,6 +38,20 @@ The plugin creates the graph snapshot, compiles the Rust bridge when needed,
 starts the bridge and tunnel, and places the session credentials inside the URL
 fragment. The token is not persisted by the plugin.
 
+## Self-hosting
+
+The default setup uses the hosted WebXR viewer and a local Rust backend exposed
+through Cloudflare Tunnel. Both endpoints are configurable:
+
+- you can host the WebXR viewer on any HTTPS server and set its address in
+  **Settings → Meta Quest Sync → HTTPS viewer**;
+- you can self-host the backend and point the plugin at your own URL;
+- for a persistent backend address, configure a Cloudflare Named Tunnel in the
+  companion project and select it in the plugin settings.
+
+The viewer and backend may use different domains. The backend still requires
+the session token and only accepts compatible HTTPS origins.
+
 ## Commands
 
 - Start AR session;

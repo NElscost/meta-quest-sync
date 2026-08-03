@@ -16,6 +16,8 @@ test("oferece comandos, ribbon e pareamento sem persistir o token", async () => 
   assert.match(main, /id: "start-ar-session"/);
   assert.match(main, /id: "stop-ar-session"/);
   assert.match(main, /QRCode\.toCanvas/);
+  assert.match(main, /setName\("Meta Quest Sync"\)\s*\.setHeading\(\)/);
+  assert.doesNotMatch(main, /createEl\("h[1-6]"/);
   assert.match(pairing, /viewer\.hash = `obsidian-ar=/);
   assert.doesNotMatch(main, /settings\.token/);
 });

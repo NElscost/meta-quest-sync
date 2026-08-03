@@ -274,7 +274,9 @@ class ObsidianArSettingTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "Meta Quest Sync" });
+    new Setting(containerEl)
+      .setName("Meta Quest Sync")
+      .setHeading();
     new Setting(containerEl)
       .setName("Pasta do projeto")
       .setDesc("Pasta absoluta do clone Obsidian-Ar que contém Scripts e note-bridge-rs.")

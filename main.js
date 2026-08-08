@@ -4707,8 +4707,7 @@ var SessionManager = class {
 `, "utf8");
   }
   async start(settings, reportStatus = () => void 0) {
-    const windows = process.platform === "win32";
-    const script = windows ? import_node_path.default.join(settings.projectRoot, "Scripts", "Start-ObsidianNoteBridge.ps1") : import_node_path.default.join(settings.projectRoot, "Scripts", "note-bridge.mjs");
+    const script = import_node_path.default.join(settings.projectRoot, "Scripts", "note-bridge.mjs");
     if (!await exists(script)) throw new Error(tr(`${import_node_path.default.basename(script)} n\xE3o foi encontrado.`, `${import_node_path.default.basename(script)} was not found.`));
     const statePath = import_node_path.default.join(settings.projectRoot, ".note-bridge-processes.json");
     const tokenPath = import_node_path.default.join(settings.projectRoot, ".note-bridge-token");
@@ -4716,17 +4715,8 @@ var SessionManager = class {
     let diagnostics = "";
     let launchError = null;
     reportStatus(tr("Iniciando a ponte Axum e o t\xFAnel HTTPS\u2026", "Starting the Axum bridge and HTTPS tunnel\u2026"));
-    const command = windows ? "powershell.exe" : settings.nodeExecutable?.trim() || "node";
-    const commandArgs = windows ? [
-      "-NoLogo",
-      "-NoProfile",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-File",
-      script,
-      "-Port",
-      String(settings.port)
-    ] : [script, "start", "--port", String(settings.port)];
+    const command = settings.nodeExecutable?.trim() || "node";
+    const commandArgs = [script, "start", "--port", String(settings.port)];
     this.child = (0, import_node_child_process.spawn)(
       command,
       commandArgs,
@@ -4774,12 +4764,11 @@ var SessionManager = class {
   }
   async stop(settings) {
     const projectRoot = settings.projectRoot;
-    const windows = process.platform === "win32";
-    const script = windows ? import_node_path.default.join(projectRoot, "Scripts", "Stop-ObsidianNoteBridge.ps1") : import_node_path.default.join(projectRoot, "Scripts", "note-bridge.mjs");
+    const script = import_node_path.default.join(projectRoot, "Scripts", "note-bridge.mjs");
     if (!await exists(script)) throw new Error(tr(`${import_node_path.default.basename(script)} n\xE3o foi encontrado.`, `${import_node_path.default.basename(script)} was not found.`));
     await new Promise((resolve, reject) => {
-      const command = windows ? "powershell.exe" : settings.nodeExecutable?.trim() || "node";
-      const commandArgs = windows ? ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script] : [script, "stop"];
+      const command = settings.nodeExecutable?.trim() || "node";
+      const commandArgs = [script, "stop"];
       const child = (0, import_node_child_process.spawn)(
         command,
         commandArgs,
@@ -5032,12 +5021,10 @@ var ObsidianArSettingTab = class extends import_obsidian2.PluginSettingTab {
       this.plugin.settings.viewerUrl = value.trim();
       await this.plugin.saveSettings();
     }));
-    if (process.platform !== "win32") {
-      new import_obsidian2.Setting(containerEl).setName(tr("Execut\xE1vel Node.js", "Node.js executable")).setDesc(tr("Use 'node' ou um caminho absoluto, por exemplo /opt/homebrew/bin/node.", "Use 'node' or an absolute path, such as /opt/homebrew/bin/node.")).addText((text) => text.setValue(this.plugin.settings.nodeExecutable).onChange(async (value) => {
-        this.plugin.settings.nodeExecutable = value.trim() || "node";
-        await this.plugin.saveSettings();
-      }));
-    }
+    new import_obsidian2.Setting(containerEl).setName(tr("Execut\xE1vel Node.js", "Node.js executable")).setDesc(tr("Use 'node' ou um caminho absoluto. No macOS, tente /opt/homebrew/bin/node.", "Use 'node' or an absolute path. On macOS, try /opt/homebrew/bin/node.")).addText((text) => text.setValue(this.plugin.settings.nodeExecutable).onChange(async (value) => {
+      this.plugin.settings.nodeExecutable = value.trim() || "node";
+      await this.plugin.saveSettings();
+    }));
     new import_obsidian2.Setting(containerEl).setName(tr("Porta local", "Local port")).setDesc(tr("Porta usada pela ponte Axum.", "Port used by the Axum bridge.")).addText((text) => text.setValue(String(this.plugin.settings.port)).onChange(async (value) => {
       const port = Number.parseInt(value, 10);
       if (port >= 1024 && port <= 65535) this.plugin.settings.port = port;

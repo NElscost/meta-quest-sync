@@ -69,10 +69,7 @@ export class SessionManager {
     settings: SessionSettings,
     reportStatus: SessionStatusReporter = () => undefined
   ): Promise<ActiveSession> {
-    const windows = process.platform === "win32";
-    const script = windows
-      ? path.join(settings.projectRoot, "Scripts", "Start-ObsidianNoteBridge.ps1")
-      : path.join(settings.projectRoot, "Scripts", "note-bridge.mjs");
+    const script = path.join(settings.projectRoot, "Scripts", "note-bridge.mjs");
     if (!(await exists(script))) throw new Error(tr(`${path.basename(script)} não foi encontrado.`, `${path.basename(script)} was not found.`));
     const statePath = path.join(settings.projectRoot, ".note-bridge-processes.json");
     const tokenPath = path.join(settings.projectRoot, ".note-bridge-token");
@@ -80,17 +77,8 @@ export class SessionManager {
     let diagnostics = "";
     let launchError: Error | null = null;
     reportStatus(tr("Iniciando a ponte Axum e o túnel HTTPS…", "Starting the Axum bridge and HTTPS tunnel…"));
-    const command = windows ? "powershell.exe" : (settings.nodeExecutable?.trim() || "node");
-    const commandArgs = windows ? [
-        "-NoLogo",
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        script,
-        "-Port",
-        String(settings.port)
-      ] : [script, "start", "--port", String(settings.port)];
+    const command = settings.nodeExecutable?.trim() || "node";
+    const commandArgs = [script, "start", "--port", String(settings.port)];
     this.child = spawn(
       command,
       commandArgs,
@@ -121,7 +109,7 @@ export class SessionManager {
             }
           }
         } catch {
-          // PowerShell may still be replacing the JSON; retry on the next poll.
+          // The launcher may still be replacing the JSON; retry on the next poll.
         }
       }
       if (this.child.exitCode !== null) {
@@ -142,16 +130,11 @@ export class SessionManager {
 
   async stop(settings: SessionSettings): Promise<void> {
     const projectRoot = settings.projectRoot;
-    const windows = process.platform === "win32";
-    const script = windows
-      ? path.join(projectRoot, "Scripts", "Stop-ObsidianNoteBridge.ps1")
-      : path.join(projectRoot, "Scripts", "note-bridge.mjs");
+    const script = path.join(projectRoot, "Scripts", "note-bridge.mjs");
     if (!(await exists(script))) throw new Error(tr(`${path.basename(script)} não foi encontrado.`, `${path.basename(script)} was not found.`));
     await new Promise<void>((resolve, reject) => {
-      const command = windows ? "powershell.exe" : (settings.nodeExecutable?.trim() || "node");
-      const commandArgs = windows
-        ? ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script]
-        : [script, "stop"];
+      const command = settings.nodeExecutable?.trim() || "node";
+      const commandArgs = [script, "stop"];
       const child = spawn(
         command,
         commandArgs,

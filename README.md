@@ -13,11 +13,17 @@ contains only the Obsidian community plugin and its release artifacts.
 - Obsidian desktop;
 - Git, Node.js 22.13+ and Rust/Cargo;
 - `cloudflared` available on `PATH`;
+- FFmpeg (`ffmpeg` and `ffprobe`) for AV1/HEVC video compatibility;
 - a local clone of [NElscost/Obsidian-Ar](https://github.com/NElscost/Obsidian-Ar);
 - Meta Quest with an up-to-date WebXR browser and hand tracking.
 
 The recommended direct-graph mode does not require Blender, Obsidian CLI or the
 3D Graph New plugin.
+
+The plugin uses the same Node.js bridge launcher on Windows, Linux, and macOS.
+If a GUI-launched Obsidian cannot find Node.js, set an absolute path in
+**Settings → Meta Quest Sync → Node.js executable**. The companion project
+README lists package commands for each operating system.
 
 ## Usage
 

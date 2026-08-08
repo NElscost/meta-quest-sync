@@ -294,17 +294,15 @@ class ObsidianArSettingTab extends PluginSettingTab {
           this.plugin.settings.viewerUrl = value.trim();
           await this.plugin.saveSettings();
         }));
-    if (process.platform !== "win32") {
-      new Setting(containerEl)
-        .setName(tr("Executável Node.js", "Node.js executable"))
-        .setDesc(tr("Use 'node' ou um caminho absoluto, por exemplo /opt/homebrew/bin/node.", "Use 'node' or an absolute path, such as /opt/homebrew/bin/node."))
-        .addText((text) => text
-          .setValue(this.plugin.settings.nodeExecutable)
-          .onChange(async (value) => {
-            this.plugin.settings.nodeExecutable = value.trim() || "node";
-            await this.plugin.saveSettings();
-          }));
-    }
+    new Setting(containerEl)
+      .setName(tr("Executável Node.js", "Node.js executable"))
+      .setDesc(tr("Use 'node' ou um caminho absoluto. No macOS, tente /opt/homebrew/bin/node.", "Use 'node' or an absolute path. On macOS, try /opt/homebrew/bin/node."))
+      .addText((text) => text
+        .setValue(this.plugin.settings.nodeExecutable)
+        .onChange(async (value) => {
+          this.plugin.settings.nodeExecutable = value.trim() || "node";
+          await this.plugin.saveSettings();
+        }));
     new Setting(containerEl)
       .setName(tr("Porta local", "Local port"))
       .setDesc(tr("Porta usada pela ponte Axum.", "Port used by the Axum bridge."))

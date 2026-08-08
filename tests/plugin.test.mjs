@@ -25,10 +25,10 @@ test("oferece comandos, ribbon e pareamento sem persistir o token", async () => 
 
 test("inicia a ponte no Windows, Linux e macOS", async () => {
   const session = await readFile(sessionUrl, "utf8");
-  assert.match(session, /process\.platform === "win32"/);
-  assert.match(session, /Start-ObsidianNoteBridge\.ps1/);
   assert.match(session, /note-bridge\.mjs/);
   assert.match(session, /\[script, "start", "--port"/);
+  assert.match(session, /settings\.nodeExecutable\?\.trim\(\) \|\| "node"/);
+  assert.doesNotMatch(session, /powershell\.exe/i);
   assert.doesNotMatch(session, /automatiza a ponte no Windows/);
 });
 

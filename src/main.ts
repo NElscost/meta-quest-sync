@@ -14,9 +14,10 @@ import {
 import { exportVaultGraph } from "./graph-exporter";
 import { createPairingUrl } from "./pairing";
 import { ActiveSession, SessionManager } from "./session-manager";
-import { tr } from "./i18n";
+import { setLanguagePreference, tr, type LanguagePreference } from "./i18n";
 
 interface ObsidianArSettings {
+  interfaceLanguage: LanguagePreference;
   projectRoot: string;
   nodeExecutable: string;
   viewerUrl: string;
@@ -30,6 +31,7 @@ interface ObsidianArSettings {
 }
 
 const DEFAULT_SETTINGS: ObsidianArSettings = {
+  interfaceLanguage: "system",
   projectRoot: "",
   nodeExecutable: "node",
   viewerUrl: "https://space-ar-quest.elscost.chatgpt.site/",
@@ -118,6 +120,8 @@ export default class ObsidianArPlugin extends Plugin {
 
   async onload(): Promise<void> {
     await this.loadSettings();
+    setLanguagePreference(this.settings.interfaceLanguage);
+    this.sessionStatus = tr("Nenhuma sessão iniciada.", "No session started.");
     this.addRibbonIcon("glasses", tr("Iniciar Meta Quest Sync", "Start Meta Quest Sync"), () => void this.startAr());
     this.addCommand({
       id: "start-ar-session",
@@ -275,6 +279,19 @@ class ObsidianArSettingTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
+    new Setting(containerEl)
+      .setName(tr("Idioma da interface", "Interface language"))
+      .setDesc(tr("Use o idioma do Obsidian/sistema ou force o inglês.", "Use the Obsidian/system language or force English."))
+      .addDropdown((dropdown) => dropdown
+        .addOption("system", tr("Idioma do sistema", "System language"))
+        .addOption("en", "English")
+        .setValue(this.plugin.settings.interfaceLanguage)
+        .onChange(async (value: LanguagePreference) => {
+          this.plugin.settings.interfaceLanguage = value;
+          setLanguagePreference(value);
+          await this.plugin.saveSettings();
+          this.display();
+        }));
     new Setting(containerEl)
       .setName(tr("Pasta do projeto", "Project folder"))
       .setDesc(tr("Pasta absoluta do clone Obsidian-Ar que contém Scripts e note-bridge-rs.", "Absolute path to the Obsidian-Ar clone containing Scripts and note-bridge-rs."))

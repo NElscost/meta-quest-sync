@@ -4648,10 +4648,25 @@ ${source.path}`;
 }
 
 // src/i18n.ts
-var language = typeof navigator === "undefined" ? "en" : navigator.language;
-var isPortuguese = language.toLocaleLowerCase().startsWith("pt");
+var languagePreference = "system";
+function systemLanguage() {
+  try {
+    const configured = globalThis.localStorage?.getItem("language")?.trim();
+    if (configured) return configured;
+  } catch {
+  }
+  const documentLanguage = globalThis.document?.documentElement?.lang?.trim();
+  if (documentLanguage) return documentLanguage;
+  return globalThis.navigator?.languages?.[0] ?? globalThis.navigator?.language ?? "en";
+}
+function setLanguagePreference(preference) {
+  languagePreference = preference;
+}
+function isPortuguese() {
+  return languagePreference === "system" && systemLanguage().toLocaleLowerCase().startsWith("pt");
+}
 function tr(portuguese, english) {
-  return isPortuguese ? portuguese : english;
+  return isPortuguese() ? portuguese : english;
 }
 
 // src/pairing.ts
@@ -4790,6 +4805,7 @@ var SessionManager = class {
 
 // src/main.ts
 var DEFAULT_SETTINGS = {
+  interfaceLanguage: "system",
   projectRoot: "",
   nodeExecutable: "node",
   viewerUrl: "https://space-ar-quest.elscost.chatgpt.site/",
@@ -4867,6 +4883,8 @@ var ObsidianArPlugin = class extends import_obsidian2.Plugin {
   }, 1500, true);
   async onload() {
     await this.loadSettings();
+    setLanguagePreference(this.settings.interfaceLanguage);
+    this.sessionStatus = tr("Nenhuma sess\xE3o iniciada.", "No session started.");
     this.addRibbonIcon("glasses", tr("Iniciar Meta Quest Sync", "Start Meta Quest Sync"), () => void this.startAr());
     this.addCommand({
       id: "start-ar-session",
@@ -5013,6 +5031,12 @@ var ObsidianArSettingTab = class extends import_obsidian2.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
+    new import_obsidian2.Setting(containerEl).setName(tr("Idioma da interface", "Interface language")).setDesc(tr("Use o idioma do Obsidian/sistema ou force o ingl\xEAs.", "Use the Obsidian/system language or force English.")).addDropdown((dropdown) => dropdown.addOption("system", tr("Idioma do sistema", "System language")).addOption("en", "English").setValue(this.plugin.settings.interfaceLanguage).onChange(async (value) => {
+      this.plugin.settings.interfaceLanguage = value;
+      setLanguagePreference(value);
+      await this.plugin.saveSettings();
+      this.display();
+    }));
     new import_obsidian2.Setting(containerEl).setName(tr("Pasta do projeto", "Project folder")).setDesc(tr("Pasta absoluta do clone Obsidian-Ar que cont\xE9m Scripts e note-bridge-rs.", "Absolute path to the Obsidian-Ar clone containing Scripts and note-bridge-rs.")).addText((text) => text.setPlaceholder("C:\\Projetos\\Obsidian-Ar").setValue(this.plugin.settings.projectRoot).onChange(async (value) => {
       this.plugin.settings.projectRoot = value.trim();
       await this.plugin.saveSettings();

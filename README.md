@@ -65,6 +65,8 @@ the session token and only accepts compatible HTTPS origins.
 - Refresh graph snapshot;
 - Stop AR session.
 
+The settings page follows the Obsidian/system language when Portuguese is detected and uses English for other languages. Select **Interface language → English** to force English.
+
 ## Privacy and network access
 
 Meta Quest Sync reads note paths and links through the Obsidian API to generate

@@ -48,8 +48,14 @@ test("usa português do sistema e inglês como fallback", async () => {
     readFile(pairingUrl, "utf8"),
     readFile(i18nUrl, "utf8")
   ]);
-  assert.match(i18n, /navigator\.language/);
+  assert.match(i18n, /localStorage\?\.getItem\("language"\)/);
+  assert.match(i18n, /documentElement\?\.lang/);
+  assert.match(i18n, /navigator\?\.languages\?\.\[0\]/);
   assert.match(i18n, /startsWith\("pt"\)/);
+  assert.match(main, /interfaceLanguage: LanguagePreference/);
+  assert.match(main, /tr\("Idioma da interface", "Interface language"\)/);
+  assert.match(main, /\.addOption\("system", tr\("Idioma do sistema", "System language"\)\)/);
+  assert.match(main, /\.addOption\("en", "English"\)/);
   assert.match(main, /tr\("Pasta do projeto", "Project folder"\)/);
   assert.match(session, /tr\("Iniciando a ponte Axum/);
   assert.match(pairing, /"The viewer must use HTTPS\."/);

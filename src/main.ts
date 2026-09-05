@@ -15,6 +15,7 @@ import { exportVaultGraph } from "./graph-exporter";
 import { createPairingUrl } from "./pairing";
 import { ActiveSession, SessionManager } from "./session-manager";
 import { setLanguagePreference, tr, type LanguagePreference } from "./i18n";
+import { renderSpeciesMap } from "./species-map";
 
 interface ObsidianArSettings {
   interfaceLanguage: LanguagePreference;
@@ -146,6 +147,9 @@ export default class ObsidianArPlugin extends Plugin {
       id: "stop-ar-session",
       name: tr("Encerrar sessão AR", "Stop AR session"),
       callback: () => void this.stopAr()
+    });
+    this.registerMarkdownCodeBlockProcessor("species-map", (source, element) => {
+      void renderSpeciesMap(source, element);
     });
     this.addSettingTab(new ObsidianArSettingTab(this.app, this));
     this.registerEvent(this.app.vault.on("create", this.exportGraphDebounced));

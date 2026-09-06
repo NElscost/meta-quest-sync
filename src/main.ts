@@ -16,6 +16,8 @@ import { createPairingUrl } from "./pairing";
 import { ActiveSession, SessionManager } from "./session-manager";
 import { setLanguagePreference, tr, type LanguagePreference } from "./i18n";
 import { renderIucnStatus, renderSpeciesMap } from "./species-map";
+import { renderIucn } from "./iucn";
+import { renderFasta } from "./fasta";
 
 interface ObsidianArSettings {
   interfaceLanguage: LanguagePreference;
@@ -151,6 +153,8 @@ export default class ObsidianArPlugin extends Plugin {
     this.registerMarkdownCodeBlockProcessor("species-map", (source, element) => {
       void renderSpeciesMap(source, element);
     });
+    this.registerMarkdownCodeBlockProcessor("iucn", (source, element) => renderIucn(source, element));
+    this.registerMarkdownCodeBlockProcessor("fasta", (source, element) => renderFasta(source, element));
     this.registerMarkdownPostProcessor((element) => renderIucnStatus(element));
     this.addSettingTab(new ObsidianArSettingTab(this.app, this));
     this.registerEvent(this.app.vault.on("create", this.exportGraphDebounced));

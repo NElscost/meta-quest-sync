@@ -12,4 +12,7 @@ test("species map pans on pointer release without rerasterizing during movement"
   assert.match(source, /if\(!moved\)/);
   assert.match(source, /c\.center=centerAfterDrag/);
   assert.match(source, /drag to pan/);
+  assert.match(source, /regionLabel/);
+  assert.match(source, /name:regionLabel/);
+  assert.match(source, /image\/webp/);
 });

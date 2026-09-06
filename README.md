@@ -99,3 +99,43 @@ The GitHub release tag must exactly match `manifest.json` and include
 ## License
 
 [MIT](LICENSE)
+
+## Biological visualization blocks
+
+Use fenced Markdown blocks in a note.
+
+### Species map
+
+```species-map
+taxon: Pitangus sulphuratus
+source: gbif
+mode: density
+center: [-15, -55]
+zoom: 2
+style: classic.point
+```
+
+Select a map region to see its inferred name, occurrence count, photos and recordings. Dragging pans the desktop map.
+
+### IUCN status
+
+```iucn
+status: LC
+system: IUCN 3.1
+label: Least Concern
+```
+
+`status` accepts `EX`, `EW`, `CR`, `EN`, `VU`, `NT` or `LC`.
+
+### FASTA
+
+Paste one or more sequences using standard FASTA headers:
+
+```fasta
+>Pitangus_sulphuratus
+ATGAACGAAAATCTATACAAAAGCCTAACATTC
+>Philohydor_lictor
+ATGAACGAAAATCTATACAAAAGCCTAACATTC
+```
+
+The desktop plugin renders a color-coded, scrollable alignment. WebXR first creates a compact raster preview; selecting it opens the paged spatial comparison view. Up to 128 sequences and 500,000 input characters are parsed, with desktop display limited to 10,000 residues per sequence to protect responsiveness.

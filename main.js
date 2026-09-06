@@ -4940,8 +4940,8 @@ async function raster(c) {
     ctx.fillStyle = "#9badc2";
     ctx.font = "15px system-ui";
     ctx.textAlign = "right";
-    ctx.fillText("\xA9 OpenStreetMap \xB7 OpenMapTiles \xB7 GBIF", 884, 588);
-    return { dataUrl: canvas.toDataURL("image/jpeg", 0.88), name };
+    ctx.fillText("Map \xA9 OSM \xB7 data \xA9 GBIF", 884, 588);
+    return { dataUrl: canvas.toDataURL("image/webp", 0.82), name };
   })();
   cache.set(key, pending);
   while (cache.size > 10) cache.delete(cache.keys().next().value);
@@ -4960,6 +4960,14 @@ function centerAfterDrag(center, dx, dy, zoom, width, height) {
   const lon = (x % scale + scale) % scale / scale * 360 - 180, clamped = Math.max(0, Math.min(scale, y)), newLat = Math.atan(Math.sinh(Math.PI * (1 - 2 * clamped / scale))) * 180 / Math.PI;
   return [newLat, lon];
 }
+function regionLabel(results, lat, lon) {
+  const counts = /* @__PURE__ */ new Map();
+  for (const item of results) {
+    const state = String(item.stateProvince || item.locality || "").trim(), country = String(item.country || "").trim(), name = state && country ? state + ", " + country : state || country;
+    if (name) counts.set(name, (counts.get(name) || 0) + 1);
+  }
+  return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] || lat.toFixed(2) + "\xB0, " + lon.toFixed(2) + "\xB0";
+}
 async function loadRegion(c, u, v) {
   const center = tile(c.center[0], c.center[1], c.zoom), wx = center.x - 1 + Math.max(0, Math.min(1, u)) * 3, wy = center.y - 1 + Math.max(0, Math.min(1, v)) * 2, lon = wx / center.scale * 360 - 180, lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * wy / center.scale))) * 180 / Math.PI, radius = Math.max(0.35, 55 / 2 ** c.zoom);
   const match = await (0, import_obsidian2.requestUrl)({ url: `https://api.gbif.org/v1/species/match?name=${encodeURIComponent(c.taxon)}` }), key = Number(match.json.usageKey ?? match.json.speciesKey);
@@ -4968,13 +4976,14 @@ async function loadRegion(c, u, v) {
     return (await (0, import_obsidian2.requestUrl)({ url: "https://api.gbif.org/v1/occurrence/search?" + q })).json;
   };
   const [photos, sounds] = await Promise.all([load("StillImage"), load("Sound")]);
-  return { lat, lon, count: Math.max(photos.count || 0, sounds.count || 0), photos: photos.results.flatMap((r) => r.media || []).filter((m) => m.type === "StillImage").slice(0, 6), sounds: sounds.results.flatMap((r) => r.media || []).filter((m) => m.type === "Sound").slice(0, 4) };
+  const results = [...photos.results || [], ...sounds.results || []];
+  return { name: regionLabel(results, lat, lon), lat, lon, count: Math.max(photos.count || 0, sounds.count || 0), photos: photos.results.flatMap((r) => r.media || []).filter((m) => m.type === "StillImage").slice(0, 6), sounds: sounds.results.flatMap((r) => r.media || []).filter((m) => m.type === "Sound").slice(0, 4) };
 }
 function showRegion(container, r) {
   let panel = container.querySelector(".meta-quest-species-region");
   if (!panel) panel = container.createDiv({ cls: "meta-quest-species-region" });
   panel.empty();
-  panel.createEl("strong", { text: `${r.lat.toFixed(2)}, ${r.lon.toFixed(2)} \xB7 ${r.count.toLocaleString()} records` });
+  panel.createEl("strong", { text: `${r.name} \xB7 ${r.count.toLocaleString()} records` });
   const gallery = panel.createDiv({ cls: "meta-quest-species-gallery" });
   for (const media of r.photos) {
     const a = gallery.createEl("a", { href: media.references || media.identifier });
@@ -5047,7 +5056,7 @@ async function renderSpeciesMap(source, container) {
       status.setText("Loading regional photos and sounds\u2026");
       void loadRegion(c, (event.clientX - bounds.left) / bounds.width, (event.clientY - bounds.top) / bounds.height).then((r) => {
         showRegion(container, r);
-        status.setText(`Selected region \xB7 ${r.count.toLocaleString()} records`);
+        status.setText(`${r.name} \xB7 ${r.count.toLocaleString()} records`);
       }).catch((e) => status.setText(`Region unavailable: ${e instanceof Error ? e.message : String(e)}`));
       return;
     }
@@ -5083,6 +5092,86 @@ function renderIucnStatus(root) {
     scale.append(title, row, labels);
     el.replaceWith(scale);
   }
+}
+
+// src/iucn.ts
+var CATEGORIES = ["EX", "EW", "CR", "EN", "VU", "NT", "LC"];
+function fields(source) {
+  const result = {};
+  for (const line of source.split(/\r?\n/)) {
+    const match = line.match(/^([\w-]+)\s*:\s*(.+)$/);
+    if (match) result[match[1].toLowerCase()] = match[2].trim();
+  }
+  return result;
+}
+function renderIucn(source, container) {
+  const config = fields(source);
+  const candidate = (config.status || config.category || source.trim()).toUpperCase();
+  const status = CATEGORIES.includes(candidate) ? candidate : "LC";
+  container.empty();
+  container.addClass("meta-quest-iucn");
+  container.createDiv({ cls: "meta-quest-iucn-system", text: config.system || "IUCN 3.1" });
+  container.createDiv({ cls: "meta-quest-iucn-title", text: config.label || status });
+  const row = container.createDiv({ cls: "meta-quest-iucn-row" });
+  for (const category of CATEGORIES) row.createSpan({ cls: `meta-quest-iucn-category${category === status ? " is-active" : ""}`, text: category });
+  const labels = container.createDiv({ cls: "meta-quest-iucn-labels" });
+  labels.createSpan({ text: tr("Extinta", "Extinct") });
+  labels.createSpan({ text: tr("Amea\xE7ada", "Threatened") });
+  labels.createSpan({ text: tr("Pouco preocupante", "Least concern") });
+}
+
+// src/fasta.ts
+var COLORS = { hydrophobic: "#63e6be", polar: "#74c0fc", acidic: "#ff8787", basic: "#b197fc", special: "#ffd166", gap: "#36445a", unknown: "#74839a" };
+function residueColor(value) {
+  if ("AVILMFWY".includes(value)) return COLORS.hydrophobic;
+  if ("STNQ".includes(value)) return COLORS.polar;
+  if ("DE".includes(value)) return COLORS.acidic;
+  if ("KRH".includes(value)) return COLORS.basic;
+  if ("CGP".includes(value)) return COLORS.special;
+  return value === "-" || value === "." ? COLORS.gap : COLORS.unknown;
+}
+function parseFasta(source) {
+  const sequences = [];
+  let current = null;
+  for (const original of source.slice(0, 5e5).split(/\r?\n/)) {
+    const line = original.trim();
+    if (!line || line.startsWith(";")) continue;
+    if (line.startsWith(">")) {
+      if (current?.sequence) sequences.push(current);
+      const parts = line.slice(1).trim().split(/\s+/), inline = [];
+      while (parts.length > 1 && /^[A-Z*.-]{12,}$/i.test(parts.at(-1) || "")) inline.unshift(parts.pop() || "");
+      const title = parts.join(" ") || `Sequence ${sequences.length + 1}`;
+      current = title ? { id: title.split(/\s+/)[0], sequence: inline.join("").toUpperCase() } : null;
+    } else {
+      current ??= { id: "Sequence_1", sequence: "" };
+      current.sequence += (line.toUpperCase().match(/[A-Z*.-]/g) || []).join("");
+    }
+    if (sequences.length >= 127) break;
+  }
+  if (current?.sequence && sequences.length < 128) sequences.push(current);
+  return sequences.filter((item) => item.sequence.length > 0);
+}
+function renderFasta(source, container) {
+  const sequences = parseFasta(source);
+  container.empty();
+  container.addClass("meta-quest-fasta");
+  if (!sequences.length) {
+    container.createDiv({ cls: "meta-quest-fasta-error", text: "No valid FASTA sequences found." });
+    return;
+  }
+  const length = Math.max(...sequences.map((item) => item.sequence.length));
+  const normalized = sequences.map((item) => ({ ...item, sequence: item.sequence.padEnd(length, "-") }));
+  container.createDiv({ cls: "meta-quest-fasta-title", text: `FASTA \xB7 ${normalized.length} sequences \xB7 ${length} residues` });
+  const grid = container.createDiv({ cls: "meta-quest-fasta-viewport" }).createDiv({ cls: "meta-quest-fasta-grid" });
+  for (const item of normalized) {
+    grid.createDiv({ cls: "meta-quest-fasta-id", text: item.id });
+    const row = grid.createDiv({ cls: "meta-quest-fasta-sequence" });
+    for (const residue of item.sequence.slice(0, 1e4)) {
+      const cell = row.createSpan({ text: residue });
+      cell.style.backgroundColor = residueColor(residue);
+    }
+  }
+  if (length > 1e4) container.createDiv({ cls: "meta-quest-fasta-warning", text: "Preview limited to 10,000 residues per sequence." });
 }
 
 // src/main.ts
@@ -5195,6 +5284,8 @@ var ObsidianArPlugin = class extends import_obsidian3.Plugin {
     this.registerMarkdownCodeBlockProcessor("species-map", (source, element) => {
       void renderSpeciesMap(source, element);
     });
+    this.registerMarkdownCodeBlockProcessor("iucn", (source, element) => renderIucn(source, element));
+    this.registerMarkdownCodeBlockProcessor("fasta", (source, element) => renderFasta(source, element));
     this.registerMarkdownPostProcessor((element) => renderIucnStatus(element));
     this.addSettingTab(new ObsidianArSettingTab(this.app, this));
     this.registerEvent(this.app.vault.on("create", this.exportGraphDebounced));

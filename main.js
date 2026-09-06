@@ -4827,10 +4827,33 @@ function tile(lat, lon, z) {
   const scale = 2 ** z, r = Math.max(-85.0511, Math.min(85.0511, lat)) * Math.PI / 180;
   return { x: Math.floor((lon + 180) / 360 * scale), y: Math.floor((1 - Math.asinh(Math.tan(r)) / Math.PI) / 2 * scale), scale };
 }
-async function bitmap(url) {
+async function decodeImage(blob) {
+  if (!blob.size) return null;
+  try {
+    return await createImageBitmap(blob);
+  } catch {
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error ?? new Error("Image decode failed"));
+      reader.readAsDataURL(blob);
+    }), image = new Image();
+    image.decoding = "async";
+    image.src = dataUrl;
+    await image.decode();
+    return image;
+  }
+}
+async function bitmap(url, optional = false) {
   const r = await (0, import_obsidian2.requestUrl)({ url });
+  if (optional && r.status === 204) return null;
   if (r.status < 200 || r.status >= 300) throw new Error(`HTTP ${r.status}`);
-  return createImageBitmap(new Blob([r.arrayBuffer]));
+  const image = await decodeImage(new Blob([r.arrayBuffer]));
+  if (!image && !optional) throw new Error("Empty image response");
+  return image;
+}
+function closeImage(image) {
+  if (image && "close" in image) image.close();
 }
 async function raster(c) {
   const key = JSON.stringify(c);
@@ -4850,13 +4873,14 @@ async function raster(c) {
     const center = tile(c.center[0], c.center[1], c.zoom), jobs = [];
     for (let row = 0; row < 2; row++) for (let column = 0; column < 3; column++) {
       const x = ((center.x + column - 1) % center.scale + center.scale) % center.scale, y = Math.max(0, Math.min(center.scale - 1, center.y + row - 1)), base = `https://tile.gbif.org/3857/omt/${c.zoom}/${x}/${y}@1x.png?style=gbif-dark`, density = `https://api.gbif.org/v2/map/occurrence/density/${c.zoom}/${x}/${y}@1x.png?srs=EPSG:3857&taxonKey=${taxonKey}&style=${encodeURIComponent(c.style)}`;
-      jobs.push(Promise.all([bitmap(base), bitmap(density)]).then(([b, d]) => ({ column, row, b, d })));
+      jobs.push(Promise.all([bitmap(base), bitmap(density, true)]).then(([b, d]) => ({ column, row, b, d })));
     }
     for (const t of await Promise.all(jobs)) {
+      if (!t.b) continue;
       ctx.drawImage(t.b, t.column * 300, t.row * 300, 300, 300);
-      ctx.drawImage(t.d, t.column * 300, t.row * 300, 300, 300);
-      t.b.close();
-      t.d.close();
+      if (t.d) ctx.drawImage(t.d, t.column * 300, t.row * 300, 300, 300);
+      closeImage(t.b);
+      closeImage(t.d);
     }
     const name = taxon.scientificName || c.taxon, g = ctx.createLinearGradient(0, 0, 0, 92);
     g.addColorStop(0, "rgba(3,8,16,.92)");

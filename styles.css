@@ -37,3 +37,5 @@
 .meta-quest-species-map-toolbar span { flex:1; }
 .meta-quest-species-map-toolbar button { width:2rem; height:2rem; padding:0; }
 .meta-quest-species-map-image { display:block; width:100%; height:auto; aspect-ratio:3/2; object-fit:cover; }
+
+.meta-quest-species-region{padding:12px;display:grid;gap:10px;background:var(--background-secondary)}.meta-quest-species-gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}.meta-quest-species-gallery img{width:100%;height:120px;object-fit:cover;border-radius:8px}.meta-quest-species-sound{display:grid;grid-template-columns:minmax(120px,1fr) 2fr;gap:8px;align-items:center}.meta-quest-species-sound audio{width:100%}

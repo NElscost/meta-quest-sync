@@ -4923,6 +4923,33 @@ function centerAfterDrag(center, dx, dy, zoom, width, height) {
   const lon = (x % scale + scale) % scale / scale * 360 - 180, clamped = Math.max(0, Math.min(scale, y)), newLat = Math.atan(Math.sinh(Math.PI * (1 - 2 * clamped / scale))) * 180 / Math.PI;
   return [newLat, lon];
 }
+async function loadRegion(c, u, v) {
+  const center = tile(c.center[0], c.center[1], c.zoom), wx = center.x - 1 + Math.max(0, Math.min(1, u)) * 3, wy = center.y - 1 + Math.max(0, Math.min(1, v)) * 2, lon = wx / center.scale * 360 - 180, lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * wy / center.scale))) * 180 / Math.PI, radius = Math.max(0.35, 55 / 2 ** c.zoom);
+  const match = await (0, import_obsidian2.requestUrl)({ url: `https://api.gbif.org/v1/species/match?name=${encodeURIComponent(c.taxon)}` }), key = Number(match.json.usageKey ?? match.json.speciesKey);
+  const load = async (type) => {
+    const q = new URLSearchParams({ taxon_key: String(key), has_coordinate: "true", decimal_latitude: `${Math.max(-89.9, lat - radius)},${Math.min(89.9, lat + radius)}`, decimal_longitude: `${Math.max(-179.9, lon - radius)},${Math.min(179.9, lon + radius)}`, media_type: type, limit: "30" });
+    return (await (0, import_obsidian2.requestUrl)({ url: "https://api.gbif.org/v1/occurrence/search?" + q })).json;
+  };
+  const [photos, sounds] = await Promise.all([load("StillImage"), load("Sound")]);
+  return { lat, lon, count: Math.max(photos.count || 0, sounds.count || 0), photos: photos.results.flatMap((r) => r.media || []).filter((m) => m.type === "StillImage").slice(0, 6), sounds: sounds.results.flatMap((r) => r.media || []).filter((m) => m.type === "Sound").slice(0, 4) };
+}
+function showRegion(container, r) {
+  let panel = container.querySelector(".meta-quest-species-region");
+  if (!panel) panel = container.createDiv({ cls: "meta-quest-species-region" });
+  panel.empty();
+  panel.createEl("strong", { text: `${r.lat.toFixed(2)}, ${r.lon.toFixed(2)} \xB7 ${r.count.toLocaleString()} records` });
+  const gallery = panel.createDiv({ cls: "meta-quest-species-gallery" });
+  for (const media of r.photos) {
+    const a = gallery.createEl("a", { href: media.references || media.identifier });
+    a.target = "_blank";
+    a.createEl("img", { attr: { src: media.identifier, loading: "lazy", alt: media.creator || "Species photo" } });
+  }
+  for (const media of r.sounds) {
+    const row = panel.createDiv({ cls: "meta-quest-species-sound" });
+    row.createSpan({ text: media.creator || "GBIF recording" });
+    row.createEl("audio", { attr: { src: media.identifier, controls: "", preload: "none" } });
+  }
+}
 async function renderSpeciesMap(source, container) {
   const c = parse(source);
   container.addClass("meta-quest-species-map");
@@ -4973,7 +5000,15 @@ async function renderSpeciesMap(source, container) {
     drag = null;
     image.style.cursor = "grab";
     image.style.transform = "";
-    if (Math.hypot(dx, dy) < 4) return;
+    if (Math.hypot(dx, dy) < 4) {
+      const bounds = image.getBoundingClientRect();
+      status.setText("Loading regional photos and sounds\u2026");
+      void loadRegion(c, (event.clientX - bounds.left) / bounds.width, (event.clientY - bounds.top) / bounds.height).then((r) => {
+        showRegion(container, r);
+        status.setText(`Selected region \xB7 ${r.count.toLocaleString()} records`);
+      }).catch((e) => status.setText(`Region unavailable: ${e instanceof Error ? e.message : String(e)}`));
+      return;
+    }
     c.center = centerAfterDrag(c.center, dx, dy, c.zoom, image.clientWidth, image.clientHeight);
     void update();
   };

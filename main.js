@@ -4848,7 +4848,12 @@ async function bitmap(url, optional = false) {
   const r = await (0, import_obsidian2.requestUrl)({ url });
   if (optional && r.status === 204) return null;
   if (r.status < 200 || r.status >= 300) throw new Error(`HTTP ${r.status}`);
-  const image = await decodeImage(new Blob([r.arrayBuffer], { type: String(r.headers["content-type"] || "image/png") }));
+  let image;
+  try {
+    image = await decodeImage(new Blob([r.arrayBuffer], { type: String(r.headers["content-type"] || "image/png") }));
+  } catch (error) {
+    throw new Error(`Decode failed for ${url} (HTTP ${r.status}, ${r.arrayBuffer.byteLength} bytes): ${error instanceof Error ? error.message : String(error)}`);
+  }
   if (!image && !optional) throw new Error("Empty image response");
   return image;
 }
@@ -4910,19 +4915,33 @@ async function raster(c) {
     throw e;
   }
 }
+function centerAfterDrag(center, dx, dy, zoom, width, height) {
+  const scale = 2 ** zoom, lat = Math.max(-85.0511, Math.min(85.0511, center[0])) * Math.PI / 180;
+  let x = (center[1] + 180) / 360 * scale, y = (1 - Math.asinh(Math.tan(lat)) / Math.PI) / 2 * scale;
+  x -= dx / Math.max(1, width) * 3;
+  y -= dy / Math.max(1, height) * 2;
+  const lon = (x % scale + scale) % scale / scale * 360 - 180, clamped = Math.max(0, Math.min(scale, y)), newLat = Math.atan(Math.sinh(Math.PI * (1 - 2 * clamped / scale))) * 180 / Math.PI;
+  return [newLat, lon];
+}
 async function renderSpeciesMap(source, container) {
   const c = parse(source);
   container.addClass("meta-quest-species-map");
-  const bar = container.createDiv({ cls: "meta-quest-species-map-toolbar" }), status = bar.createSpan({ text: "Loading GBIF occurrence map\u2026" }), minus = bar.createEl("button", { text: "\u2212", attr: { "aria-label": "Zoom out" } }), plus = bar.createEl("button", { text: "+", attr: { "aria-label": "Zoom in" } }), image = container.createEl("img", { cls: "meta-quest-species-map-image", attr: { alt: "Species occurrence map" } });
+  const bar = container.createDiv({ cls: "meta-quest-species-map-toolbar" }), status = bar.createSpan({ text: "Loading GBIF occurrence map\u2026" }), minus = bar.createEl("button", { text: "\u2212", attr: { "aria-label": "Zoom out" } }), plus = bar.createEl("button", { text: "+", attr: { "aria-label": "Zoom in" } }), image = container.createEl("img", { cls: "meta-quest-species-map-image", attr: { alt: "Species occurrence map", draggable: "false" } });
+  image.style.cursor = "grab";
+  image.style.touchAction = "none";
+  image.style.userSelect = "none";
+  let generation = 0;
   const update = async () => {
+    const current = ++generation;
     status.setText("Loading GBIF occurrence map\u2026");
     try {
       const result = await raster(c);
+      if (current !== generation) return;
       image.src = result.dataUrl;
       image.alt = `Occurrence map for ${result.name}`;
-      status.setText(`${result.name} \xB7 zoom ${c.zoom}`);
+      status.setText(`${result.name} \xB7 zoom ${c.zoom} \xB7 drag to pan`);
     } catch (e) {
-      status.setText(`Map unavailable: ${e instanceof Error ? e.message : String(e)}`);
+      if (current === generation) status.setText(`Map unavailable: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
   minus.onclick = () => {
@@ -4933,6 +4952,33 @@ async function renderSpeciesMap(source, container) {
     c.zoom = Math.min(5, c.zoom + 1);
     void update();
   };
+  let drag = null;
+  image.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 && event.pointerType === "mouse") return;
+    drag = { id: event.pointerId, x: event.clientX, y: event.clientY, dx: 0, dy: 0 };
+    image.setPointerCapture(event.pointerId);
+    image.style.cursor = "grabbing";
+    event.preventDefault();
+  });
+  image.addEventListener("pointermove", (event) => {
+    if (!drag || event.pointerId !== drag.id) return;
+    drag.dx = event.clientX - drag.x;
+    drag.dy = event.clientY - drag.y;
+    image.style.transform = `translate(${drag.dx}px,${drag.dy}px) scale(1.025)`;
+    event.preventDefault();
+  });
+  const finish = (event) => {
+    if (!drag || event.pointerId !== drag.id) return;
+    const { dx, dy } = drag;
+    drag = null;
+    image.style.cursor = "grab";
+    image.style.transform = "";
+    if (Math.hypot(dx, dy) < 4) return;
+    c.center = centerAfterDrag(c.center, dx, dy, c.zoom, image.clientWidth, image.clientHeight);
+    void update();
+  };
+  image.addEventListener("pointerup", finish);
+  image.addEventListener("pointercancel", finish);
   await update();
 }
 

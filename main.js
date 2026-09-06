@@ -4860,6 +4860,25 @@ async function bitmap(url, optional = false) {
 function closeImage(image) {
   if (image && "close" in image) image.close();
 }
+async function clusters(c, key, center) {
+  const scale = center.scale, nw = centerAfterDrag(c.center, 900, 600, c.zoom, 900, 600), se = centerAfterDrag(c.center, -900, -600, c.zoom, 900, 600), q = new URLSearchParams({ taxonKey: String(key), hasCoordinate: "true", limit: "300", decimalLatitude: Math.min(nw[0], se[0]) + "," + Math.max(nw[0], se[0]) });
+  const response = await (0, import_obsidian2.requestUrl)({ url: "https://api.gbif.org/v1/occurrence/search?" + q }), groups = /* @__PURE__ */ new Map();
+  for (const r of response.json.results || []) {
+    const lat = Number(r.decimalLatitude), lon = Number(r.decimalLongitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    let tx = (lon + 180) / 360 * scale;
+    while (tx < center.x - 1) tx += scale;
+    while (tx > center.x + 2) tx -= scale;
+    const rad = Math.max(-85.0511, Math.min(85.0511, lat)) * Math.PI / 180, ty = (1 - Math.asinh(Math.tan(rad)) / Math.PI) / 2 * scale, x = (tx - (center.x - 1)) / 3 * 900, y = (ty - (center.y - 1)) / 2 * 600;
+    if (x < 0 || x > 900 || y < 0 || y > 600) continue;
+    const k = Math.floor(x / 32) + ":" + Math.floor(y / 32), g = groups.get(k) || { x: 0, y: 0, count: 0 };
+    g.x += x;
+    g.y += y;
+    g.count++;
+    groups.set(k, g);
+  }
+  return [...groups.values()].map((g) => ({ x: g.x / g.count, y: g.y / g.count, count: g.count }));
+}
 async function raster(c) {
   const key = JSON.stringify(c);
   if (cache.has(key)) return cache.get(key);
@@ -4880,13 +4899,31 @@ async function raster(c) {
       const x = ((center.x + column - 1) % center.scale + center.scale) % center.scale, y = Math.max(0, Math.min(center.scale - 1, center.y + row - 1)), base = `https://tile.gbif.org/3857/omt/${c.zoom}/${x}/${y}@1x.png?style=gbif-dark`, density = `https://api.gbif.org/v2/map/occurrence/density/${c.zoom}/${x}/${y}@1x.png?srs=EPSG:3857&taxonKey=${taxonKey}&style=${encodeURIComponent(c.style)}`;
       jobs.push(Promise.all([bitmap(base), bitmap(density, true)]).then(([b, d]) => ({ column, row, b, d })));
     }
-    for (const t of await Promise.all(jobs)) {
+    const [tiles, points] = await Promise.all([Promise.all(jobs), clusters(c, taxonKey, center)]);
+    for (const t of tiles) {
       if (!t.b) continue;
       ctx.drawImage(t.b, t.column * 300, t.row * 300, 300, 300);
       if (t.d) ctx.drawImage(t.d, t.column * 300, t.row * 300, 300, 300);
       closeImage(t.b);
       closeImage(t.d);
     }
+    for (const p of points) {
+      const radius = Math.min(15, 4 + Math.sqrt(p.count) * 2.2);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,169,46,.74)";
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "rgba(255,244,184,.92)";
+      ctx.stroke();
+      if (p.count > 2) {
+        ctx.fillStyle = "#07111d";
+        ctx.font = "700 11px system-ui";
+        ctx.textAlign = "center";
+        ctx.fillText(String(p.count), p.x, p.y + 4);
+      }
+    }
+    ctx.textAlign = "left";
     const name = taxon.scientificName || c.taxon, g = ctx.createLinearGradient(0, 0, 0, 92);
     g.addColorStop(0, "rgba(3,8,16,.92)");
     g.addColorStop(1, "rgba(3,8,16,0)");
@@ -4897,7 +4934,7 @@ async function raster(c) {
     ctx.fillText(name, 20, 38);
     ctx.fillStyle = "#aabbd0";
     ctx.font = "18px system-ui";
-    ctx.fillText("GBIF occurrence density \xB7 observer coverage affects apparent concentration", 20, 68);
+    ctx.fillText("GBIF occurrence regions \xB7 select a marker for photos and sounds", 20, 68);
     ctx.fillStyle = "rgba(3,8,16,.78)";
     ctx.fillRect(0, 566, 900, 34);
     ctx.fillStyle = "#9badc2";
@@ -5002,6 +5039,10 @@ async function renderSpeciesMap(source, container) {
     image.style.transform = "";
     if (Math.hypot(dx, dy) < 4) {
       const bounds = image.getBoundingClientRect();
+      let marker = container.querySelector(".meta-quest-species-selection");
+      if (!marker) marker = container.createSpan({ cls: "meta-quest-species-selection" });
+      marker.style.left = (event.clientX - bounds.left) / bounds.width * 100 + "%";
+      marker.style.top = event.clientY - bounds.top + image.offsetTop + "px";
       status.setText("Loading regional photos and sounds\u2026");
       void loadRegion(c, (event.clientX - bounds.left) / bounds.width, (event.clientY - bounds.top) / bounds.height).then((r) => {
         showRegion(container, r);

@@ -39,3 +39,5 @@
 .meta-quest-species-map-image { display:block; width:100%; height:auto; aspect-ratio:3/2; object-fit:cover; }
 
 .meta-quest-species-region{padding:12px;display:grid;gap:10px;background:var(--background-secondary)}.meta-quest-species-gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}.meta-quest-species-gallery img{width:100%;height:120px;object-fit:cover;border-radius:8px}.meta-quest-species-sound{display:grid;grid-template-columns:minmax(120px,1fr) 2fr;gap:8px;align-items:center}.meta-quest-species-sound audio{width:100%}
+
+.meta-quest-species-map{position:relative}.meta-quest-species-selection{position:absolute;width:20px;height:20px;border:3px solid #fff;border-radius:50%;box-shadow:0 0 0 5px rgba(255,169,46,.7);pointer-events:none;transform:translate(-50%,-50%);z-index:4}

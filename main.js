@@ -5019,7 +5019,7 @@ async function renderSpeciesMap(source, container) {
   let drag = null;
   image.addEventListener("pointerdown", (event) => {
     if (event.button !== 0 && event.pointerType === "mouse") return;
-    drag = { id: event.pointerId, x: event.clientX, y: event.clientY, dx: 0, dy: 0 };
+    drag = { id: event.pointerId, x: event.clientX, y: event.clientY, dx: 0, dy: 0, moved: false };
     image.setPointerCapture(event.pointerId);
     image.style.cursor = "grabbing";
     event.preventDefault();
@@ -5028,16 +5028,17 @@ async function renderSpeciesMap(source, container) {
     if (!drag || event.pointerId !== drag.id) return;
     drag.dx = event.clientX - drag.x;
     drag.dy = event.clientY - drag.y;
+    if (Math.hypot(drag.dx, drag.dy) > 7) drag.moved = true;
     image.style.transform = `translate(${drag.dx}px,${drag.dy}px) scale(1.025)`;
     event.preventDefault();
   });
   const finish = (event) => {
     if (!drag || event.pointerId !== drag.id) return;
-    const { dx, dy } = drag;
+    const finalDx = event.clientX - drag.x, finalDy = event.clientY - drag.y, moved = drag.moved || Math.hypot(finalDx, finalDy) > 7, dx = moved ? finalDx : drag.dx, dy = moved ? finalDy : drag.dy;
     drag = null;
     image.style.cursor = "grab";
     image.style.transform = "";
-    if (Math.hypot(dx, dy) < 4) {
+    if (!moved) {
       const bounds = image.getBoundingClientRect();
       let marker = container.querySelector(".meta-quest-species-selection");
       if (!marker) marker = container.createSpan({ cls: "meta-quest-species-selection" });
@@ -5056,6 +5057,32 @@ async function renderSpeciesMap(source, container) {
   image.addEventListener("pointerup", finish);
   image.addEventListener("pointercancel", finish);
   await update();
+}
+function renderIucnStatus(root) {
+  const cats = ["EX", "EW", "CR", "EN", "VU", "NT", "LC"];
+  for (const el of Array.from(root.querySelectorAll("p,blockquote p"))) {
+    const text = (el.textContent || "").replace(/\s+/g, " ").trim();
+    if (!/IUCN\s*3\.1\s*:/i.test(text) || el.querySelector(".meta-quest-iucn")) continue;
+    const marked = el.querySelector("mark")?.textContent?.trim().toUpperCase(), active = marked && cats.includes(marked) ? marked : "LC", scale = document.createElement("div");
+    scale.className = "meta-quest-iucn";
+    scale.style.cssText = "margin:8px auto;max-width:500px;text-align:center;font:600 13px system-ui";
+    const title = document.createElement("div");
+    title.textContent = active === "LC" ? "Pouco Preocupante" : "IUCN " + active;
+    title.style.cssText = "margin-bottom:7px;color:#1167b1;font-weight:800";
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;justify-content:center;gap:5px";
+    for (const c of cats) {
+      const x = document.createElement("span");
+      x.textContent = c;
+      x.style.cssText = "display:grid;place-items:center;width:27px;height:27px;border:1.5px solid " + (c === active ? "#153c14" : "#6f7781") + ";border-radius:50%;background:" + (c === active ? "#18aa24" : "#fff") + ";color:" + (c === active ? "#fff" : "#303840") + ";font-size:11px;font-weight:800;box-sizing:border-box";
+      row.append(x);
+    }
+    const labels = document.createElement("div");
+    labels.style.cssText = "display:grid;grid-template-columns:54px 135px 76px;justify-content:center;margin-top:4px;color:var(--text-muted);font-size:10px;font-weight:500;line-height:1.1";
+    labels.innerHTML = "<span>Extinta</span><span>Amea\xE7ada</span><span>Pouco<br>preocupante</span>";
+    scale.append(title, row, labels);
+    el.replaceWith(scale);
+  }
 }
 
 // src/main.ts
@@ -5168,6 +5195,7 @@ var ObsidianArPlugin = class extends import_obsidian3.Plugin {
     this.registerMarkdownCodeBlockProcessor("species-map", (source, element) => {
       void renderSpeciesMap(source, element);
     });
+    this.registerMarkdownPostProcessor((element) => renderIucnStatus(element));
     this.addSettingTab(new ObsidianArSettingTab(this.app, this));
     this.registerEvent(this.app.vault.on("create", this.exportGraphDebounced));
     this.registerEvent(this.app.vault.on("delete", this.exportGraphDebounced));

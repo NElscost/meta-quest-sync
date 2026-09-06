@@ -8,7 +8,8 @@ test("species map pans on pointer release without rerasterizing during movement"
   assert.match(source, /setPointerCapture/);
   assert.match(source, /pointermove/);
   assert.match(source, /pointerup/);
-  assert.match(source, /Math\.hypot\(dx,dy\)<4/);
+  assert.match(source, /drag\.moved\|\|Math\.hypot\(finalDx,finalDy\)>7/);
+  assert.match(source, /if\(!moved\)/);
   assert.match(source, /c\.center=centerAfterDrag/);
   assert.match(source, /drag to pan/);
 });

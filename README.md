@@ -40,6 +40,8 @@ README lists package commands for each operating system.
    temporary session.
 5. Select **Start AR**, then open the generated QR code on the Quest.
 
+Species map blocks support cached GBIF occurrence markers, click-safe map panning, regional photos and sounds, and an IUCN 3.1 status scale. In WebXR, regional recordings can also feed the optional Spectral Trail.
+
 The plugin creates the graph snapshot, compiles the Rust bridge when needed,
 starts the bridge and tunnel, and places the session credentials inside the URL
 fragment. The token is not persisted by the plugin.

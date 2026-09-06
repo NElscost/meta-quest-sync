@@ -15,7 +15,7 @@ import { exportVaultGraph } from "./graph-exporter";
 import { createPairingUrl } from "./pairing";
 import { ActiveSession, SessionManager } from "./session-manager";
 import { setLanguagePreference, tr, type LanguagePreference } from "./i18n";
-import { renderSpeciesMap } from "./species-map";
+import { renderIucnStatus, renderSpeciesMap } from "./species-map";
 
 interface ObsidianArSettings {
   interfaceLanguage: LanguagePreference;
@@ -151,6 +151,7 @@ export default class ObsidianArPlugin extends Plugin {
     this.registerMarkdownCodeBlockProcessor("species-map", (source, element) => {
       void renderSpeciesMap(source, element);
     });
+    this.registerMarkdownPostProcessor((element) => renderIucnStatus(element));
     this.addSettingTab(new ObsidianArSettingTab(this.app, this));
     this.registerEvent(this.app.vault.on("create", this.exportGraphDebounced));
     this.registerEvent(this.app.vault.on("delete", this.exportGraphDebounced));

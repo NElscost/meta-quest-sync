@@ -4848,7 +4848,7 @@ async function bitmap(url, optional = false) {
   const r = await (0, import_obsidian2.requestUrl)({ url });
   if (optional && r.status === 204) return null;
   if (r.status < 200 || r.status >= 300) throw new Error(`HTTP ${r.status}`);
-  const image = await decodeImage(new Blob([r.arrayBuffer]));
+  const image = await decodeImage(new Blob([r.arrayBuffer], { type: String(r.headers["content-type"] || "image/png") }));
   if (!image && !optional) throw new Error("Empty image response");
   return image;
 }

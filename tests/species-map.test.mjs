@@ -15,4 +15,6 @@ test("species map pans on pointer release without rerasterizing during movement"
   assert.match(source, /regionLabel/);
   assert.match(source, /name:regionLabel/);
   assert.match(source, /image\/webp/);
+  assert.match(source, /optimizedImageUrl/);
+  assert.match(source, /1280,720/);
 });

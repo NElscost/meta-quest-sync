@@ -13,4 +13,8 @@ test("registers explicit IUCN and FASTA blocks", async () => {
   assert.match(fasta, /parseFasta/);
   assert.match(fasta, /inline\.unshift/);
   assert.match(fasta, /10_000/);
+  assert.match(fasta, /buildUpgma/);
+  assert.match(fasta, /pDistance/);
+  assert.match(fasta, /UPGMA tree/);
+  assert.match(fasta, /Distances/);
 });

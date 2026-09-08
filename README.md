@@ -138,4 +138,4 @@ ATGAACGAAAATCTATACAAAAGCCTAACATTC
 ATGAACGAAAATCTATACAAAAGCCTAACATTC
 ```
 
-The desktop plugin renders a color-coded, scrollable alignment. WebXR first creates a compact raster preview; selecting it opens the paged spatial comparison view. Up to 128 sequences and 500,000 input characters are parsed, with desktop display limited to 10,000 residues per sequence to protect responsiveness.
+The desktop plugin renders a color-coded, scrollable alignment. Use **Alignment**, **UPGMA tree**, and **Distances** to switch between the sequence grid, a lightweight phylogenetic tree inferred with p-distance, and a distance matrix. Tree inference is on demand and bounded to 64 taxa and 5,000 informative sites; this is intended for exploration and does not replace a reproducible MEGA analysis with an explicit substitution model and bootstrap settings. WebXR first creates a compact raster preview; selecting it opens the paged spatial comparison view. Up to 128 sequences and 500,000 input characters are parsed, with desktop display limited to 10,000 residues per sequence to protect responsiveness.

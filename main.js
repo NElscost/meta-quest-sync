@@ -4979,6 +4979,24 @@ async function loadRegion(c, u, v) {
   const results = [...photos.results || [], ...sounds.results || []];
   return { name: regionLabel(results, lat, lon), lat, lon, count: Math.max(photos.count || 0, sounds.count || 0), photos: photos.results.flatMap((r) => r.media || []).filter((m) => m.type === "StillImage").slice(0, 6), sounds: sounds.results.flatMap((r) => r.media || []).filter((m) => m.type === "Sound").slice(0, 4) };
 }
+async function optimizedImageUrl(url, maxWidth = 1920, maxHeight = 1080) {
+  const response = await (0, import_obsidian2.requestUrl)({ url });
+  if (response.status < 200 || response.status >= 300) throw new Error(`Image HTTP ${response.status}`);
+  const blob = new Blob([response.arrayBuffer], { type: String(response.headers["content-type"] || "image/jpeg") }), source = await createImageBitmap(blob);
+  try {
+    const scale = Math.min(1, maxWidth / source.width, maxHeight / source.height);
+    if (scale >= 1) return URL.createObjectURL(blob);
+    const width = Math.max(1, Math.round(source.width * scale)), height = Math.max(1, Math.round(source.height * scale)), resized = await createImageBitmap(source, { resizeWidth: width, resizeHeight: height, resizeQuality: "high" }), canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext("2d")?.drawImage(resized, 0, 0);
+    resized.close();
+    const output = await new Promise((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("Image resize failed")), "image/webp", 0.84));
+    return URL.createObjectURL(output);
+  } finally {
+    source.close();
+  }
+}
 function showRegion(container, r) {
   let panel = container.querySelector(".meta-quest-species-region");
   if (!panel) panel = container.createDiv({ cls: "meta-quest-species-region" });
@@ -4988,7 +5006,13 @@ function showRegion(container, r) {
   for (const media of r.photos) {
     const a = gallery.createEl("a", { href: media.references || media.identifier });
     a.target = "_blank";
-    a.createEl("img", { attr: { src: media.identifier, loading: "lazy", alt: media.creator || "Species photo" } });
+    const image = a.createEl("img", { attr: { loading: "lazy", alt: media.creator || "Species photo" } });
+    void optimizedImageUrl(media.identifier, 1280, 720).then((url) => {
+      image.src = url;
+      image.addEventListener("load", () => URL.revokeObjectURL(url), { once: true });
+    }).catch(() => {
+      image.alt = "Species image unavailable";
+    });
   }
   for (const media of r.sounds) {
     const row = panel.createDiv({ cls: "meta-quest-species-sound" });
@@ -5151,19 +5175,97 @@ function parseFasta(source) {
   if (current?.sequence && sequences.length < 128) sequences.push(current);
   return sequences.filter((item) => item.sequence.length > 0);
 }
-function renderFasta(source, container) {
-  const sequences = parseFasta(source);
-  container.empty();
-  container.addClass("meta-quest-fasta");
-  if (!sequences.length) {
-    container.createDiv({ cls: "meta-quest-fasta-error", text: "No valid FASTA sequences found." });
-    return;
+function pDistance(a, b, maxSites = 5e3) {
+  let compared = 0, different = 0;
+  const length = Math.min(a.length, b.length), step = Math.max(1, Math.ceil(length / maxSites));
+  for (let i = 0; i < length; i += step) {
+    const x = a[i], y = b[i];
+    if (!x || !y || x === "-" || y === "-" || x === "." || y === "." || x === "N" || y === "N" || x === "X" || y === "X") continue;
+    compared++;
+    if (x !== y) different++;
   }
-  const length = Math.max(...sequences.map((item) => item.sequence.length));
-  const normalized = sequences.map((item) => ({ ...item, sequence: item.sequence.padEnd(length, "-") }));
-  container.createDiv({ cls: "meta-quest-fasta-title", text: `FASTA \xB7 ${normalized.length} sequences \xB7 ${length} residues` });
-  const grid = container.createDiv({ cls: "meta-quest-fasta-viewport" }).createDiv({ cls: "meta-quest-fasta-grid" });
-  for (const item of normalized) {
+  return compared ? different / compared : 1;
+}
+function buildUpgma(sequences) {
+  const selected = sequences.slice(0, 64), clusters2 = selected.map((item, index) => ({ node: { name: item.id, height: 0, size: 1 }, members: [index] })), base = selected.map((a, i) => selected.map((b, j) => i === j ? 0 : pDistance(a.sequence, b.sequence)));
+  while (clusters2.length > 1) {
+    let ai = 0, bi = 1, best = Infinity;
+    for (let i = 0; i < clusters2.length; i++) for (let j = i + 1; j < clusters2.length; j++) {
+      let total = 0, count = 0;
+      for (const a of clusters2[i].members) for (const b of clusters2[j].members) {
+        total += base[a][b];
+        count++;
+      }
+      const distance = count ? total / count : 1;
+      if (distance < best) {
+        best = distance;
+        ai = i;
+        bi = j;
+      }
+    }
+    const right = clusters2.splice(bi, 1)[0], left = clusters2.splice(ai, 1)[0];
+    clusters2.push({ node: { left: left.node, right: right.node, height: best / 2, size: left.node.size + right.node.size }, members: [...left.members, ...right.members] });
+  }
+  return clusters2[0]?.node ?? null;
+}
+function drawTree(root, sequences) {
+  const leaves = [];
+  const collect = (node) => {
+    if (node.name) leaves.push(node);
+    else {
+      if (node.left) collect(node.left);
+      if (node.right) collect(node.right);
+    }
+  };
+  collect(root);
+  const canvas = document.createElement("canvas"), row = 26, margin = 24, labelWidth = 220;
+  canvas.width = 1100;
+  canvas.height = Math.max(180, margin * 2 + leaves.length * row);
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#07111d";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const maxHeight = Math.max(root.height, 1e-4), xFor = (height) => margin + (maxHeight - height) / maxHeight * (canvas.width - labelWidth - margin * 2), positions = /* @__PURE__ */ new Map();
+  leaves.forEach((leaf, index) => positions.set(leaf, { x: xFor(0), y: margin + index * row + row / 2 }));
+  const layout = (node) => {
+    const known = positions.get(node);
+    if (known) return known;
+    const left = layout(node.left), right = layout(node.right), point = { x: xFor(node.height), y: (left.y + right.y) / 2 };
+    positions.set(node, point);
+    return point;
+  };
+  layout(root);
+  const paint = (node) => {
+    if (node.name) return;
+    const point = positions.get(node), left = positions.get(node.left), right = positions.get(node.right);
+    ctx.strokeStyle = "#73e6ce";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(point.x, left.y);
+    ctx.lineTo(point.x, right.y);
+    ctx.moveTo(point.x, left.y);
+    ctx.lineTo(left.x, left.y);
+    ctx.moveTo(point.x, right.y);
+    ctx.lineTo(right.x, right.y);
+    ctx.stroke();
+    paint(node.left);
+    paint(node.right);
+  };
+  paint(root);
+  ctx.font = "600 14px ui-monospace";
+  ctx.fillStyle = "#e7f1ff";
+  ctx.textBaseline = "middle";
+  for (const leaf of leaves) {
+    const point = positions.get(leaf);
+    ctx.fillText(leaf.name ?? "Sequence", point.x + 8, point.y);
+  }
+  ctx.fillStyle = "#9fb2c9";
+  ctx.font = "13px system-ui";
+  ctx.fillText(`UPGMA \xB7 p-distance \xB7 ${Math.min(64, sequences.length)} taxa \xB7 up to 5,000 informative sites`, margin, canvas.height - 10);
+  return canvas;
+}
+function renderAlignment(sequences, length, container) {
+  const grid = container.createDiv({ cls: "meta-quest-fasta-grid" });
+  for (const item of sequences) {
     grid.createDiv({ cls: "meta-quest-fasta-id", text: item.id });
     const row = grid.createDiv({ cls: "meta-quest-fasta-sequence" });
     for (const residue of item.sequence.slice(0, 1e4)) {
@@ -5172,6 +5274,52 @@ function renderFasta(source, container) {
     }
   }
   if (length > 1e4) container.createDiv({ cls: "meta-quest-fasta-warning", text: "Preview limited to 10,000 residues per sequence." });
+}
+function renderDistanceMatrix(sequences, container) {
+  const selected = sequences.slice(0, 24), table = container.createEl("table", { cls: "meta-quest-fasta-matrix" }), head = table.createEl("thead").createEl("tr");
+  head.createEl("th", { text: "Taxon" });
+  selected.forEach((_, i) => head.createEl("th", { text: String(i + 1) }));
+  const body = table.createEl("tbody");
+  selected.forEach((a, i) => {
+    const row = body.createEl("tr");
+    row.createEl("th", { text: `${i + 1}. ${a.id}` });
+    selected.forEach((b, j) => row.createEl("td", { text: i === j ? "\u2014" : pDistance(a.sequence, b.sequence).toFixed(3) }));
+  });
+}
+function renderFasta(source, container) {
+  const sequences = parseFasta(source);
+  container.empty();
+  container.addClass("meta-quest-fasta");
+  if (!sequences.length) {
+    container.createDiv({ cls: "meta-quest-fasta-error", text: "No valid FASTA sequences found." });
+    return;
+  }
+  const length = Math.max(...sequences.map((item) => item.sequence.length)), normalized = sequences.map((item) => ({ ...item, sequence: item.sequence.padEnd(length, "-") }));
+  container.createDiv({ cls: "meta-quest-fasta-title", text: `FASTA \xB7 ${normalized.length} sequences \xB7 ${length} residues` });
+  const toolbar = container.createDiv({ cls: "meta-quest-fasta-toolbar" }), alignmentButton = toolbar.createEl("button", { text: "Alignment" }), treeButton = toolbar.createEl("button", { text: "UPGMA tree" }), matrixButton = toolbar.createEl("button", { text: "Distances" }), viewport = container.createDiv({ cls: "meta-quest-fasta-viewport" });
+  const showAlignment = () => {
+    viewport.empty();
+    renderAlignment(normalized, length, viewport);
+  };
+  alignmentButton.onclick = showAlignment;
+  treeButton.onclick = () => {
+    viewport.empty();
+    if (normalized.length < 2) {
+      viewport.createDiv({ cls: "meta-quest-fasta-error", text: "At least two sequences are required to infer a tree." });
+      return;
+    }
+    viewport.createDiv({ cls: "meta-quest-fasta-status", text: "Inferring UPGMA tree\u2026" });
+    requestAnimationFrame(() => {
+      const tree = buildUpgma(normalized);
+      viewport.empty();
+      if (tree) viewport.append(drawTree(tree, normalized));
+    });
+  };
+  matrixButton.onclick = () => {
+    viewport.empty();
+    renderDistanceMatrix(normalized, viewport);
+  };
+  showAlignment();
 }
 
 // src/main.ts

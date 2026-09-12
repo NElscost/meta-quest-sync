@@ -4960,6 +4960,38 @@ function centerAfterDrag(center, dx, dy, zoom, width, height) {
   const lon = (x % scale + scale) % scale / scale * 360 - 180, clamped = Math.max(0, Math.min(scale, y)), newLat = Math.atan(Math.sinh(Math.PI * (1 - 2 * clamped / scale))) * 180 / Math.PI;
   return [newLat, lon];
 }
+function boundaryPixel(c, lon, lat) {
+  const center = tile(c.center[0], c.center[1], c.zoom), scale = center.scale, r = Math.max(-85.0511, Math.min(85.0511, lat)) * Math.PI / 180;
+  let x = (lon + 180) / 360 * scale;
+  while (x < center.x - 1) x += scale;
+  while (x > center.x + 2) x -= scale;
+  const y = (1 - Math.asinh(Math.tan(r)) / Math.PI) / 2 * scale;
+  return { x: (x - (center.x - 1)) / 3 * 900, y: (y - (center.y - 1)) / 2 * 600 };
+}
+function drawBoundary(canvas, c, geometry) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.clearRect(0, 0, 900, 600);
+  if (!geometry) return;
+  const polygons = geometry.type === "Polygon" ? [geometry.coordinates] : geometry.coordinates;
+  ctx.beginPath();
+  for (const polygon of polygons) for (const ring of polygon) {
+    ring.forEach(([lon, lat], index) => {
+      const p = boundaryPixel(c, lon, lat);
+      index ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y);
+    });
+    ctx.closePath();
+  }
+  ctx.fillStyle = "rgba(0,255,0,0.33)";
+  ctx.strokeStyle = "rgb(0,170,0)";
+  ctx.lineWidth = 3;
+  ctx.fill("evenodd");
+  ctx.stroke();
+}
+async function loadBoundary(lat, lon) {
+  const q = new URLSearchParams({ format: "jsonv2", lat: String(lat), lon: String(lon), zoom: "5", polygon_geojson: "1" }), response = await (0, import_obsidian2.requestUrl)({ url: "https://nominatim.openstreetmap.org/reverse?" + q, headers: { "Accept-Language": "en", "User-Agent": "MetaQuestSync/0.1" } }), geometry = response.json?.geojson;
+  return geometry && (geometry.type === "Polygon" || geometry.type === "MultiPolygon") ? geometry : null;
+}
 function regionLabel(results, lat, lon) {
   const counts = /* @__PURE__ */ new Map();
   for (const item of results) {
@@ -5023,13 +5055,14 @@ function showRegion(container, r) {
 async function renderSpeciesMap(source, container) {
   const c = parse(source);
   container.addClass("meta-quest-species-map");
-  const bar = container.createDiv({ cls: "meta-quest-species-map-toolbar" }), status = bar.createSpan({ text: "Loading GBIF occurrence map\u2026" }), minus = bar.createEl("button", { text: "\u2212", attr: { "aria-label": "Zoom out" } }), plus = bar.createEl("button", { text: "+", attr: { "aria-label": "Zoom in" } }), image = container.createEl("img", { cls: "meta-quest-species-map-image", attr: { alt: "Species occurrence map", draggable: "false" } });
+  const bar = container.createDiv({ cls: "meta-quest-species-map-toolbar" }), status = bar.createSpan({ text: "Loading GBIF occurrence map\u2026" }), minus = bar.createEl("button", { text: "\u2212", attr: { "aria-label": "Zoom out" } }), plus = bar.createEl("button", { text: "+", attr: { "aria-label": "Zoom in" } }), viewport = container.createDiv({ cls: "meta-quest-species-map-viewport" }), image = viewport.createEl("img", { cls: "meta-quest-species-map-image", attr: { alt: "Species occurrence map", draggable: "false" } }), boundary = viewport.createEl("canvas", { cls: "meta-quest-species-boundary", attr: { width: "900", height: "600", "aria-hidden": "true" } });
   image.style.cursor = "grab";
   image.style.touchAction = "none";
   image.style.userSelect = "none";
-  let generation = 0;
+  let generation = 0, selectedBoundary = null;
   const update = async () => {
     const current = ++generation;
+    drawBoundary(boundary, c, selectedBoundary);
     status.setText("Loading GBIF occurrence map\u2026");
     try {
       const result = await raster(c);
@@ -5062,7 +5095,7 @@ async function renderSpeciesMap(source, container) {
     drag.dx = event.clientX - drag.x;
     drag.dy = event.clientY - drag.y;
     if (Math.hypot(drag.dx, drag.dy) > 7) drag.moved = true;
-    image.style.transform = `translate(${drag.dx}px,${drag.dy}px) scale(1.025)`;
+    viewport.style.transform = `translate(${drag.dx}px,${drag.dy}px) scale(1.025)`;
     event.preventDefault();
   });
   const finish = (event) => {
@@ -5070,16 +5103,20 @@ async function renderSpeciesMap(source, container) {
     const finalDx = event.clientX - drag.x, finalDy = event.clientY - drag.y, moved = drag.moved || Math.hypot(finalDx, finalDy) > 7, dx = moved ? finalDx : drag.dx, dy = moved ? finalDy : drag.dy;
     drag = null;
     image.style.cursor = "grab";
-    image.style.transform = "";
+    viewport.style.transform = "";
     if (!moved) {
       const bounds = image.getBoundingClientRect();
-      let marker = container.querySelector(".meta-quest-species-selection");
-      if (!marker) marker = container.createSpan({ cls: "meta-quest-species-selection" });
+      let marker = viewport.querySelector(".meta-quest-species-selection");
+      if (!marker) marker = viewport.createSpan({ cls: "meta-quest-species-selection" });
       marker.style.left = (event.clientX - bounds.left) / bounds.width * 100 + "%";
-      marker.style.top = event.clientY - bounds.top + image.offsetTop + "px";
+      marker.style.top = (event.clientY - bounds.top) / bounds.height * 100 + "%";
       status.setText("Loading regional photos and sounds\u2026");
       void loadRegion(c, (event.clientX - bounds.left) / bounds.width, (event.clientY - bounds.top) / bounds.height).then((r) => {
         showRegion(container, r);
+        void loadBoundary(r.lat, r.lon).then((geometry) => {
+          selectedBoundary = geometry;
+          drawBoundary(boundary, c, selectedBoundary);
+        });
         status.setText(`${r.name} \xB7 ${r.count.toLocaleString()} records`);
       }).catch((e) => status.setText(`Region unavailable: ${e instanceof Error ? e.message : String(e)}`));
       return;

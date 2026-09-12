@@ -20,4 +20,5 @@ test("species map pans on pointer release without rerasterizing during movement"
   assert.match(source, /loadBoundary/);
   assert.match(source, /polygon_geojson/);
   assert.match(source, /rgba\(0,255,0,0\.33\)/);
+  assert.match(source, /stopImmediatePropagation/);
 });

@@ -5059,6 +5059,10 @@ async function renderSpeciesMap(source, container) {
   image.style.cursor = "grab";
   image.style.touchAction = "none";
   image.style.userSelect = "none";
+  image.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  });
   let generation = 0, selectedBoundary = null;
   const update = async () => {
     const current = ++generation;
@@ -5089,6 +5093,7 @@ async function renderSpeciesMap(source, container) {
     image.setPointerCapture(event.pointerId);
     image.style.cursor = "grabbing";
     event.preventDefault();
+    event.stopPropagation();
   });
   image.addEventListener("pointermove", (event) => {
     if (!drag || event.pointerId !== drag.id) return;
@@ -5100,6 +5105,8 @@ async function renderSpeciesMap(source, container) {
   });
   const finish = (event) => {
     if (!drag || event.pointerId !== drag.id) return;
+    event.preventDefault();
+    event.stopPropagation();
     const finalDx = event.clientX - drag.x, finalDy = event.clientY - drag.y, moved = drag.moved || Math.hypot(finalDx, finalDy) > 7, dx = moved ? finalDx : drag.dx, dy = moved ? finalDy : drag.dy;
     drag = null;
     image.style.cursor = "grab";

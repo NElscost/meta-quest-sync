@@ -9,7 +9,8 @@ import {
   Plugin,
   PluginSettingTab,
   Setting,
-  debounce
+  debounce,
+  requestUrl
 } from "obsidian";
 import { exportVaultGraph } from "./graph-exporter";
 import { createPairingUrl } from "./pairing";
@@ -150,8 +151,8 @@ export default class ObsidianArPlugin extends Plugin {
       name: tr("Encerrar sessão AR", "Stop AR session"),
       callback: () => void this.stopAr()
     });
-    this.registerMarkdownCodeBlockProcessor("species-map", (source, element) => {
-      void renderSpeciesMap(source, element);
+    this.registerMarkdownCodeBlockProcessor("species-map", (source, element, context) => {
+      void renderSpeciesMap(source, element, { analyzeAudio: (url) => this.analyzeRegionalAudio(context.sourcePath, url) });
     });
     this.registerMarkdownCodeBlockProcessor("iucn", (source, element) => renderIucn(source, element));
     this.registerMarkdownCodeBlockProcessor("fasta", (source, element) => renderFasta(source, element));
@@ -237,6 +238,19 @@ export default class ObsidianArPlugin extends Plugin {
       }
     })();
     return this.startPromise;
+  }
+
+  private async analyzeRegionalAudio(notePath: string, url: string): Promise<unknown> {
+    if (!this.activeSession && !(await this.startAr())) throw new Error(tr("Não foi possível iniciar a ponte de análise.", "Could not start the analysis bridge."));
+    const session = this.activeSession;
+    if (!session) throw new Error(tr("A sessão de análise não está ativa.", "The analysis session is not active."));
+    const response = await requestUrl({
+      url: `${session.url.replace(/\/+$/u, "")}/remote-spectral-analysis`, method: "POST",
+      headers: { Authorization: `Bearer ${session.token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ note_path: notePath, url })
+    });
+    if (response.status < 200 || response.status >= 300) throw new Error(`Spectral analysis HTTP ${response.status}`);
+    return response.json;
   }
 
   async stopAr(): Promise<void> {

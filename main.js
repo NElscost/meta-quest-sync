@@ -5000,6 +5000,10 @@ function regionLabel(results, lat, lon) {
   }
   return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] || lat.toFixed(2) + "\xB0, " + lon.toFixed(2) + "\xB0";
 }
+function mapCoordinate(c, u, v) {
+  const center = tile(c.center[0], c.center[1], c.zoom), wx = center.x - 1 + Math.max(0, Math.min(1, u)) * 3, wy = center.y - 1 + Math.max(0, Math.min(1, v)) * 2;
+  return { lon: wx / center.scale * 360 - 180, lat: Math.atan(Math.sinh(Math.PI * (1 - 2 * wy / center.scale))) * 180 / Math.PI };
+}
 async function loadRegion(c, u, v) {
   const center = tile(c.center[0], c.center[1], c.zoom), wx = center.x - 1 + Math.max(0, Math.min(1, u)) * 3, wy = center.y - 1 + Math.max(0, Math.min(1, v)) * 2, lon = wx / center.scale * 360 - 180, lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * wy / center.scale))) * 180 / Math.PI, radius = Math.max(0.35, 55 / 2 ** c.zoom);
   const match = await (0, import_obsidian2.requestUrl)({ url: `https://api.gbif.org/v1/species/match?name=${encodeURIComponent(c.taxon)}` }), key = Number(match.json.usageKey ?? match.json.speciesKey);
@@ -5063,7 +5067,7 @@ async function renderSpeciesMap(source, container) {
     event.preventDefault();
     event.stopImmediatePropagation();
   });
-  let generation = 0, selectedBoundary = null;
+  let generation = 0, selectedBoundary = null, hoverGeneration = 0, hoverTimer = null;
   const update = async () => {
     const current = ++generation;
     drawBoundary(boundary, c, selectedBoundary);
@@ -5096,7 +5100,18 @@ async function renderSpeciesMap(source, container) {
     event.stopPropagation();
   });
   image.addEventListener("pointermove", (event) => {
-    if (!drag || event.pointerId !== drag.id) return;
+    if (!drag) {
+      if (event.pointerType !== "mouse") return;
+      const bounds = image.getBoundingClientRect(), u = (event.clientX - bounds.left) / bounds.width, v = (event.clientY - bounds.top) / bounds.height, point = mapCoordinate(c, u, v), request = ++hoverGeneration;
+      if (hoverTimer !== null) window.clearTimeout(hoverTimer);
+      hoverTimer = window.setTimeout(() => {
+        void loadBoundary(point.lat, point.lon).then((geometry) => {
+          if (request === hoverGeneration) drawBoundary(boundary, c, geometry ?? selectedBoundary);
+        });
+      }, 140);
+      return;
+    }
+    if (event.pointerId !== drag.id) return;
     drag.dx = event.clientX - drag.x;
     drag.dy = event.clientY - drag.y;
     if (Math.hypot(drag.dx, drag.dy) > 7) drag.moved = true;
@@ -5133,6 +5148,16 @@ async function renderSpeciesMap(source, container) {
   };
   image.addEventListener("pointerup", finish);
   image.addEventListener("pointercancel", finish);
+  image.addEventListener("pointerleave", () => {
+    hoverGeneration++;
+    if (hoverTimer !== null) window.clearTimeout(hoverTimer);
+    drawBoundary(boundary, c, selectedBoundary);
+  });
+  image.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    c.zoom = Math.max(1, Math.min(5, c.zoom + (event.deltaY < 0 ? 1 : -1)));
+    void update();
+  }, { passive: false });
   await update();
 }
 function renderIucnStatus(root) {

@@ -4571,7 +4571,7 @@ module.exports = __toCommonJS(main_exports);
 var import_node_fs2 = require("node:fs");
 var import_node_path2 = __toESM(require("node:path"), 1);
 var import_qrcode = __toESM(require_lib(), 1);
-var import_obsidian3 = require("obsidian");
+var import_obsidian4 = require("obsidian");
 
 // src/graph-exporter.ts
 var import_obsidian = require("obsidian");
@@ -4804,7 +4804,144 @@ var SessionManager = class {
 };
 
 // src/species-map.ts
+var import_obsidian3 = require("obsidian");
+
+// src/desktop-spectral-trail.ts
 var import_obsidian2 = require("obsidian");
+async function analyze(url) {
+  const response = await (0, import_obsidian2.requestUrl)({ url });
+  if (response.status < 200 || response.status >= 300) throw new Error(`Audio HTTP ${response.status}`);
+  const context = new AudioContext();
+  try {
+    const buffer = await context.decodeAudioData(response.arrayBuffer.slice(0));
+    const channel = buffer.getChannelData(0), size = 512, hop = Math.max(256, Math.ceil(Math.max(1, channel.length - size) / 720)), bins = Math.min(128, size / 2), previous = new Float32Array(bins), points = [];
+    for (let offset = 0; offset + size <= channel.length; offset += hop) {
+      let rms = 0;
+      const re = new Float32Array(bins), im = new Float32Array(bins);
+      for (let n = 0; n < size; n++) {
+        const sample = channel[offset + n] * (0.5 - 0.5 * Math.cos(2 * Math.PI * n / (size - 1)));
+        rms += sample * sample;
+        for (let k = 0; k < bins; k++) {
+          const angle = 2 * Math.PI * k * n / size;
+          re[k] += sample * Math.cos(angle);
+          im[k] -= sample * Math.sin(angle);
+        }
+      }
+      let total = 0, weighted = 0, spread = 0, flux = 0;
+      const magnitude = new Float32Array(bins);
+      for (let k = 1; k < bins; k++) {
+        const value = Math.hypot(re[k], im[k]);
+        magnitude[k] = value;
+        total += value;
+        weighted += value * k;
+        flux += Math.max(0, value - previous[k]);
+      }
+      const centroid = total ? weighted / total : 0;
+      for (let k = 1; k < bins; k++) spread += magnitude[k] * (k - centroid) ** 2;
+      const hz = centroid * buffer.sampleRate / size, spreadHz = Math.sqrt(spread / Math.max(total, 1)) * buffer.sampleRate / size, energy = Math.min(1, Math.sqrt(rms / size) * 5), normalizedFlux = Math.min(1, flux / Math.max(total, 1));
+      points.push({ time: offset / buffer.sampleRate, x: offset / channel.length * 2 - 1, y: Math.min(1, hz / 1e4) * 1.5 - 0.7, z: (Math.min(1, spreadHz / 6e3) - 0.5) * 0.9 + normalizedFlux * 0.35, hue: 220 + Math.min(1, hz / 1e4) * 140, strength: 0.18 + energy * 0.55 + normalizedFlux * 0.27 });
+      previous.set(magnitude);
+    }
+    return { points, duration: buffer.duration };
+  } finally {
+    void context.close();
+  }
+}
+function mountDesktopSpectralTrail(audio, host, url) {
+  const shell = host.createDiv({ cls: "meta-quest-spectral-desktop" }), toolbar = shell.createDiv({ cls: "meta-quest-spectral-toolbar" });
+  toolbar.createSpan({ text: "Identidade espectral 3D" });
+  const rotateButton = toolbar.createEl("button", { text: "Rota\xE7\xE3o: desligada" }), resetButton = toolbar.createEl("button", { text: "Redefinir c\xE2mera" });
+  const canvas = shell.createEl("canvas", { cls: "meta-quest-spectral-canvas", attr: { width: "960", height: "480", "aria-label": "Trilha espectral tridimensional" } }), ctx = canvas.getContext("2d");
+  let points = [], duration = 0, yaw = -0.55, pitch = 0.28, autoRotate = false, drag = null, frame = 0, disposed = false;
+  const project = (p) => {
+    const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch), x = p.x * cy - p.z * sy, z = p.x * sy + p.z * cy, y = p.y * cp - z * sp, depth = p.y * sp + z * cp + 3.2, scale = 310 / depth;
+    return { x: canvas.width / 2 + x * scale, y: canvas.height * 0.56 - y * scale, visible: depth > 0.2 };
+  };
+  function grid() {
+    if (!ctx) return;
+    ctx.strokeStyle = "rgba(112,151,190,.2)";
+    ctx.lineWidth = 1;
+    for (let i = -5; i <= 5; i++) {
+      for (const [a, b] of [[{ x: i / 5, y: -0.72, z: -1 }, { x: i / 5, y: -0.72, z: 1 }], [{ x: -1, y: -0.72, z: i / 5 }, { x: 1, y: -0.72, z: i / 5 }]]) {
+        const pa = project(a), pb = project(b);
+        ctx.beginPath();
+        ctx.moveTo(pa.x, pa.y);
+        ctx.lineTo(pb.x, pb.y);
+        ctx.stroke();
+      }
+    }
+  }
+  function render() {
+    if (disposed || !ctx) return;
+    ctx.fillStyle = "#050b13";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    grid();
+    if (autoRotate) yaw += 25e-4;
+    const identity = audio.ended || duration > 0 && audio.currentTime >= duration - 0.08 && audio.paused, start = identity ? 0 : Math.max(0, audio.currentTime - 3.25), end = identity ? duration : audio.currentTime;
+    ctx.lineWidth = identity ? 1.65 : 2.2;
+    let previous = null;
+    for (const point of points) {
+      if (point.time < start || point.time > end) {
+        previous = null;
+        continue;
+      }
+      const current = project(point);
+      if (previous && current.visible) {
+        const alpha = identity ? Math.max(0.18, point.strength * 0.72) : point.strength * Math.max(0.12, 1 - (end - point.time) / 3.25);
+        ctx.strokeStyle = `hsla(${point.hue},92%,62%,${alpha})`;
+        ctx.beginPath();
+        ctx.moveTo(previous.x, previous.y);
+        ctx.lineTo(current.x, current.y);
+        ctx.stroke();
+      }
+      previous = current;
+    }
+    ctx.fillStyle = "rgba(224,238,252,.72)";
+    ctx.font = "24px system-ui";
+    ctx.fillText(identity ? "assinatura completa" : "janela temporal atual", 24, 40);
+    frame = requestAnimationFrame(render);
+  }
+  rotateButton.onclick = () => {
+    autoRotate = !autoRotate;
+    rotateButton.setText(`Rota\xE7\xE3o: ${autoRotate ? "ligada" : "desligada"}`);
+  };
+  resetButton.onclick = () => {
+    yaw = -0.55;
+    pitch = 0.28;
+  };
+  canvas.addEventListener("pointerdown", (event) => {
+    drag = { x: event.clientX, y: event.clientY, yaw, pitch };
+    canvas.setPointerCapture(event.pointerId);
+  });
+  canvas.addEventListener("pointermove", (event) => {
+    if (!drag) return;
+    yaw = drag.yaw + (event.clientX - drag.x) * 8e-3;
+    pitch = Math.max(-1.2, Math.min(1.2, drag.pitch + (event.clientY - drag.y) * 8e-3));
+  });
+  canvas.addEventListener("pointerup", () => {
+    drag = null;
+  });
+  canvas.addEventListener("pointercancel", () => {
+    drag = null;
+  });
+  const observer = new MutationObserver(() => {
+    if (document.contains(shell)) return;
+    disposed = true;
+    cancelAnimationFrame(frame);
+    observer.disconnect();
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  void analyze(url).then((result) => {
+    points = result.points;
+    duration = result.duration;
+  }).catch((error) => {
+    toolbar.createSpan({ text: `An\xE1lise indispon\xEDvel: ${error instanceof Error ? error.message : String(error)}` });
+  });
+  render();
+  return shell;
+}
+
+// src/species-map.ts
 var cache = /* @__PURE__ */ new Map();
 function parse(source) {
   const c = { taxon: "", source: "gbif", center: [-15, -55], zoom: 2, style: "classic.point" };
@@ -4845,7 +4982,7 @@ async function decodeImage(blob) {
   }
 }
 async function bitmap(url, optional = false) {
-  const r = await (0, import_obsidian2.requestUrl)({ url });
+  const r = await (0, import_obsidian3.requestUrl)({ url });
   if (optional && r.status === 204) return null;
   if (r.status < 200 || r.status >= 300) throw new Error(`HTTP ${r.status}`);
   let image;
@@ -4862,7 +4999,7 @@ function closeImage(image) {
 }
 async function clusters(c, key, center) {
   const scale = center.scale, nw = centerAfterDrag(c.center, 900, 600, c.zoom, 900, 600), se = centerAfterDrag(c.center, -900, -600, c.zoom, 900, 600), q = new URLSearchParams({ taxonKey: String(key), hasCoordinate: "true", limit: "300", decimalLatitude: Math.min(nw[0], se[0]) + "," + Math.max(nw[0], se[0]) });
-  const response = await (0, import_obsidian2.requestUrl)({ url: "https://api.gbif.org/v1/occurrence/search?" + q }), groups = /* @__PURE__ */ new Map();
+  const response = await (0, import_obsidian3.requestUrl)({ url: "https://api.gbif.org/v1/occurrence/search?" + q }), groups = /* @__PURE__ */ new Map();
   for (const r of response.json.results || []) {
     const lat = Number(r.decimalLatitude), lon = Number(r.decimalLongitude);
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
@@ -4885,7 +5022,7 @@ async function raster(c) {
   const pending = (async () => {
     if (!c.taxon) throw new Error("No taxon configured.");
     if (c.source !== "gbif") throw new Error(`Unsupported source: ${c.source}`);
-    const match = await (0, import_obsidian2.requestUrl)({ url: `https://api.gbif.org/v1/species/match?name=${encodeURIComponent(c.taxon)}` }), taxon = match.json, taxonKey = Number(taxon.usageKey ?? taxon.speciesKey);
+    const match = await (0, import_obsidian3.requestUrl)({ url: `https://api.gbif.org/v1/species/match?name=${encodeURIComponent(c.taxon)}` }), taxon = match.json, taxonKey = Number(taxon.usageKey ?? taxon.speciesKey);
     if (!Number.isFinite(taxonKey)) throw new Error(`Taxon not found: ${c.taxon}`);
     const canvas = document.createElement("canvas");
     canvas.width = 900;
@@ -4989,7 +5126,7 @@ function drawBoundary(canvas, c, geometry) {
   ctx.stroke();
 }
 async function loadBoundary(lat, lon) {
-  const q = new URLSearchParams({ format: "jsonv2", lat: String(lat), lon: String(lon), zoom: "5", polygon_geojson: "1" }), response = await (0, import_obsidian2.requestUrl)({ url: "https://nominatim.openstreetmap.org/reverse?" + q, headers: { "Accept-Language": "en", "User-Agent": "MetaQuestSync/0.1" } }), geometry = response.json?.geojson;
+  const q = new URLSearchParams({ format: "jsonv2", lat: String(lat), lon: String(lon), zoom: "5", polygon_geojson: "1" }), response = await (0, import_obsidian3.requestUrl)({ url: "https://nominatim.openstreetmap.org/reverse?" + q, headers: { "Accept-Language": "en", "User-Agent": "MetaQuestSync/0.1" } }), geometry = response.json?.geojson;
   return geometry && (geometry.type === "Polygon" || geometry.type === "MultiPolygon") ? geometry : null;
 }
 function regionLabel(results, lat, lon) {
@@ -5006,17 +5143,17 @@ function mapCoordinate(c, u, v) {
 }
 async function loadRegion(c, u, v) {
   const center = tile(c.center[0], c.center[1], c.zoom), wx = center.x - 1 + Math.max(0, Math.min(1, u)) * 3, wy = center.y - 1 + Math.max(0, Math.min(1, v)) * 2, lon = wx / center.scale * 360 - 180, lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * wy / center.scale))) * 180 / Math.PI, radius = Math.max(0.35, 55 / 2 ** c.zoom);
-  const match = await (0, import_obsidian2.requestUrl)({ url: `https://api.gbif.org/v1/species/match?name=${encodeURIComponent(c.taxon)}` }), key = Number(match.json.usageKey ?? match.json.speciesKey);
+  const match = await (0, import_obsidian3.requestUrl)({ url: `https://api.gbif.org/v1/species/match?name=${encodeURIComponent(c.taxon)}` }), key = Number(match.json.usageKey ?? match.json.speciesKey);
   const load = async (type) => {
     const q = new URLSearchParams({ taxon_key: String(key), has_coordinate: "true", decimal_latitude: `${Math.max(-89.9, lat - radius)},${Math.min(89.9, lat + radius)}`, decimal_longitude: `${Math.max(-179.9, lon - radius)},${Math.min(179.9, lon + radius)}`, media_type: type, limit: "30" });
-    return (await (0, import_obsidian2.requestUrl)({ url: "https://api.gbif.org/v1/occurrence/search?" + q })).json;
+    return (await (0, import_obsidian3.requestUrl)({ url: "https://api.gbif.org/v1/occurrence/search?" + q })).json;
   };
   const [photos, sounds] = await Promise.all([load("StillImage"), load("Sound")]);
   const results = [...photos.results || [], ...sounds.results || []];
   return { name: regionLabel(results, lat, lon), lat, lon, count: Math.max(photos.count || 0, sounds.count || 0), photos: photos.results.flatMap((r) => r.media || []).filter((m) => m.type === "StillImage").slice(0, 6), sounds: sounds.results.flatMap((r) => r.media || []).filter((m) => m.type === "Sound").slice(0, 4) };
 }
 async function optimizedImageUrl(url, maxWidth = 1920, maxHeight = 1080) {
-  const response = await (0, import_obsidian2.requestUrl)({ url });
+  const response = await (0, import_obsidian3.requestUrl)({ url });
   if (response.status < 200 || response.status >= 300) throw new Error(`Image HTTP ${response.status}`);
   const blob = new Blob([response.arrayBuffer], { type: String(response.headers["content-type"] || "image/jpeg") }), source = await createImageBitmap(blob);
   try {
@@ -5053,7 +5190,18 @@ function showRegion(container, r) {
   for (const media of r.sounds) {
     const row = panel.createDiv({ cls: "meta-quest-species-sound" });
     row.createSpan({ text: media.creator || "GBIF recording" });
-    row.createEl("audio", { attr: { src: media.identifier, controls: "", preload: "none" } });
+    const player = row.createEl("audio", { attr: { src: media.identifier, controls: "", preload: "metadata" } }), trailButton = row.createEl("button", { text: "Rastro 3D", attr: { "aria-label": "Abrir identidade espectral em 3D" } });
+    let trail = null;
+    trailButton.onclick = () => {
+      if (trail) {
+        trail.remove();
+        trail = null;
+        trailButton.setText("Rastro 3D");
+        return;
+      }
+      trail = mountDesktopSpectralTrail(player, row, media.identifier);
+      trailButton.setText("Fechar 3D");
+    };
   }
 }
 async function renderSpeciesMap(source, container) {
@@ -5408,7 +5556,7 @@ var DEFAULT_SETTINGS = {
 function listSetting(value) {
   return value.split(/[\n,]/u).map((item) => item.trim().replace(/^\/+|\/+$/gu, "")).filter(Boolean);
 }
-var PairingModal = class extends import_obsidian3.Modal {
+var PairingModal = class extends import_obsidian4.Modal {
   constructor(app, pairingUrl, session) {
     super(app);
     this.pairingUrl = pairingUrl;
@@ -5445,11 +5593,11 @@ var PairingModal = class extends import_obsidian3.Modal {
     const copy = actions.createEl("button", { text: tr("Copiar link", "Copy link") });
     copy.addEventListener("click", () => {
       void navigator.clipboard.writeText(this.pairingUrl).then(
-        () => new import_obsidian3.Notice(tr("Link de pareamento copiado.", "Pairing link copied.")),
+        () => new import_obsidian4.Notice(tr("Link de pareamento copiado.", "Pairing link copied.")),
         () => {
           text.focus();
           text.select();
-          new import_obsidian3.Notice(tr("Selecione e copie o link exibido.", "Select and copy the displayed link."));
+          new import_obsidian4.Notice(tr("Selecione e copie o link exibido.", "Select and copy the displayed link."));
         }
       );
     });
@@ -5460,13 +5608,13 @@ var PairingModal = class extends import_obsidian3.Modal {
     this.contentEl.empty();
   }
 };
-var ObsidianArPlugin = class extends import_obsidian3.Plugin {
+var ObsidianArPlugin = class extends import_obsidian4.Plugin {
   settings = DEFAULT_SETTINGS;
   sessionManager = new SessionManager();
   activeSession = null;
   startPromise = null;
   sessionStatus = tr("Nenhuma sess\xE3o iniciada.", "No session started.");
-  exportGraphDebounced = (0, import_obsidian3.debounce)(() => {
+  exportGraphDebounced = (0, import_obsidian4.debounce)(() => {
     if (this.settings.autoExport) void this.exportGraph(false);
   }, 1500, true);
   async onload() {
@@ -5515,7 +5663,7 @@ var ObsidianArPlugin = class extends import_obsidian3.Plugin {
   }
   vaultPath() {
     const adapter = this.app.vault.adapter;
-    if (!(adapter instanceof import_obsidian3.FileSystemAdapter)) {
+    if (!(adapter instanceof import_obsidian4.FileSystemAdapter)) {
       throw new Error(tr("Meta Quest Sync requer um vault local no aplicativo desktop.", "Meta Quest Sync requires a local vault in the desktop app."));
     }
     return adapter.getBasePath();
@@ -5523,7 +5671,7 @@ var ObsidianArPlugin = class extends import_obsidian3.Plugin {
   async exportGraph(showNotice) {
     const root = this.settings.projectRoot.trim();
     if (!root) {
-      if (showNotice) new import_obsidian3.Notice(tr("Configure a pasta do projeto Meta Quest Sync.", "Configure the Meta Quest Sync project folder."));
+      if (showNotice) new import_obsidian4.Notice(tr("Configure a pasta do projeto Meta Quest Sync.", "Configure the Meta Quest Sync project folder."));
       return;
     }
     const graph = exportVaultGraph(
@@ -5533,7 +5681,7 @@ var ObsidianArPlugin = class extends import_obsidian3.Plugin {
     );
     await import_node_fs2.promises.writeFile(import_node_path2.default.join(root, "graph.json"), `${JSON.stringify(graph)}
 `, "utf8");
-    if (showNotice) new import_obsidian3.Notice(tr(`Grafo atualizado: ${graph.nodes.length} notas.`, `Graph updated: ${graph.nodes.length} notes.`));
+    if (showNotice) new import_obsidian4.Notice(tr(`Grafo atualizado: ${graph.nodes.length} notas.`, `Graph updated: ${graph.nodes.length} notes.`));
   }
   setSessionStatus(message, report) {
     this.sessionStatus = message;
@@ -5551,14 +5699,14 @@ var ObsidianArPlugin = class extends import_obsidian3.Plugin {
     }
     const root = this.settings.projectRoot.trim();
     if (!root) {
-      new import_obsidian3.Notice(tr("Abra Configura\xE7\xF5es \u2192 Meta Quest Sync e informe a pasta do projeto.", "Open Settings \u2192 Meta Quest Sync and select the project folder."));
+      new import_obsidian4.Notice(tr("Abra Configura\xE7\xF5es \u2192 Meta Quest Sync e informe a pasta do projeto.", "Open Settings \u2192 Meta Quest Sync and select the project folder."));
       this.setSessionStatus(tr("Informe a pasta do projeto antes de iniciar.", "Select the project folder before starting."), report);
       return false;
     }
     this.startPromise = (async () => {
       try {
         this.setSessionStatus(tr("Exportando o grafo do vault\u2026", "Exporting the vault graph\u2026"), report);
-        new import_obsidian3.Notice(tr("Meta Quest Sync: preparando grafo, ponte e t\xFAnel\u2026", "Meta Quest Sync: preparing graph, bridge and tunnel\u2026"), 8e3);
+        new import_obsidian4.Notice(tr("Meta Quest Sync: preparando grafo, ponte e t\xFAnel\u2026", "Meta Quest Sync: preparing graph, bridge and tunnel\u2026"), 8e3);
         await this.exportGraph(false);
         this.setSessionStatus(tr("Salvando a configura\xE7\xE3o segura da ponte\u2026", "Saving the secure bridge configuration\u2026"), report);
         await this.sessionManager.configure(this.settings, this.vaultPath());
@@ -5568,13 +5716,13 @@ var ObsidianArPlugin = class extends import_obsidian3.Plugin {
         );
         this.showPairing();
         this.setSessionStatus(tr("Sess\xE3o pronta para parear com o Quest.", "Session ready to pair with the Quest."), report);
-        new import_obsidian3.Notice(tr("Meta Quest Sync pronto para parear com o Quest.", "Meta Quest Sync is ready to pair with the Quest."));
+        new import_obsidian4.Notice(tr("Meta Quest Sync pronto para parear com o Quest.", "Meta Quest Sync is ready to pair with the Quest."));
         return true;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error(tr("Meta Quest Sync n\xE3o iniciou.", "Meta Quest Sync failed to start."), error);
         this.setSessionStatus(tr(`Falha: ${message}`, `Failure: ${message}`), report);
-        new import_obsidian3.Notice(`Meta Quest Sync: ${message}`, 12e3);
+        new import_obsidian4.Notice(`Meta Quest Sync: ${message}`, 12e3);
         return false;
       } finally {
         this.startPromise = null;
@@ -5589,9 +5737,9 @@ var ObsidianArPlugin = class extends import_obsidian3.Plugin {
       await this.sessionManager.stop(this.settings);
       this.activeSession = null;
       this.sessionStatus = tr("Sess\xE3o encerrada.", "Session stopped.");
-      new import_obsidian3.Notice(tr("Sess\xE3o Meta Quest Sync encerrada.", "Meta Quest Sync session stopped."));
+      new import_obsidian4.Notice(tr("Sess\xE3o Meta Quest Sync encerrada.", "Meta Quest Sync session stopped."));
     } catch (error) {
-      new import_obsidian3.Notice(tr(`N\xE3o foi poss\xEDvel encerrar: ${String(error)}`, `Could not stop the session: ${String(error)}`), 1e4);
+      new import_obsidian4.Notice(tr(`N\xE3o foi poss\xEDvel encerrar: ${String(error)}`, `Could not stop the session: ${String(error)}`), 1e4);
     }
   }
   showPairing() {
@@ -5607,7 +5755,7 @@ var ObsidianArPlugin = class extends import_obsidian3.Plugin {
       settings?.close();
       window.setTimeout(() => modal.open(), 120);
     } catch (error) {
-      new import_obsidian3.Notice(tr(`Pareamento inv\xE1lido: ${String(error)}`, `Invalid pairing: ${String(error)}`));
+      new import_obsidian4.Notice(tr(`Pareamento inv\xE1lido: ${String(error)}`, `Invalid pairing: ${String(error)}`));
     }
   }
   async loadSettings() {
@@ -5617,7 +5765,7 @@ var ObsidianArPlugin = class extends import_obsidian3.Plugin {
     await this.saveData(this.settings);
   }
 };
-var ObsidianArSettingTab = class extends import_obsidian3.PluginSettingTab {
+var ObsidianArSettingTab = class extends import_obsidian4.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -5625,57 +5773,57 @@ var ObsidianArSettingTab = class extends import_obsidian3.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    new import_obsidian3.Setting(containerEl).setName(tr("Idioma da interface", "Interface language")).setDesc(tr("Use o idioma do Obsidian/sistema ou force o ingl\xEAs.", "Use the Obsidian/system language or force English.")).addDropdown((dropdown) => dropdown.addOption("system", tr("Idioma do sistema", "System language")).addOption("en", "English").setValue(this.plugin.settings.interfaceLanguage).onChange(async (value) => {
+    new import_obsidian4.Setting(containerEl).setName(tr("Idioma da interface", "Interface language")).setDesc(tr("Use o idioma do Obsidian/sistema ou force o ingl\xEAs.", "Use the Obsidian/system language or force English.")).addDropdown((dropdown) => dropdown.addOption("system", tr("Idioma do sistema", "System language")).addOption("en", "English").setValue(this.plugin.settings.interfaceLanguage).onChange(async (value) => {
       this.plugin.settings.interfaceLanguage = value;
       setLanguagePreference(value);
       await this.plugin.saveSettings();
       this.display();
     }));
-    new import_obsidian3.Setting(containerEl).setName(tr("Pasta do projeto", "Project folder")).setDesc(tr("Pasta absoluta do clone Obsidian-Ar que cont\xE9m Scripts e note-bridge-rs.", "Absolute path to the Obsidian-Ar clone containing Scripts and note-bridge-rs.")).addText((text) => text.setPlaceholder("C:\\Projetos\\Obsidian-Ar").setValue(this.plugin.settings.projectRoot).onChange(async (value) => {
+    new import_obsidian4.Setting(containerEl).setName(tr("Pasta do projeto", "Project folder")).setDesc(tr("Pasta absoluta do clone Obsidian-Ar que cont\xE9m Scripts e note-bridge-rs.", "Absolute path to the Obsidian-Ar clone containing Scripts and note-bridge-rs.")).addText((text) => text.setPlaceholder("C:\\Projetos\\Obsidian-Ar").setValue(this.plugin.settings.projectRoot).onChange(async (value) => {
       this.plugin.settings.projectRoot = value.trim();
       await this.plugin.saveSettings();
     }));
-    new import_obsidian3.Setting(containerEl).setName(tr("Visualizador HTTPS", "HTTPS viewer")).setDesc(tr("Site WebXR que ser\xE1 aberto pelo QR Code.", "WebXR site opened by the QR code.")).addText((text) => text.setValue(this.plugin.settings.viewerUrl).onChange(async (value) => {
+    new import_obsidian4.Setting(containerEl).setName(tr("Visualizador HTTPS", "HTTPS viewer")).setDesc(tr("Site WebXR que ser\xE1 aberto pelo QR Code.", "WebXR site opened by the QR code.")).addText((text) => text.setValue(this.plugin.settings.viewerUrl).onChange(async (value) => {
       this.plugin.settings.viewerUrl = value.trim();
       await this.plugin.saveSettings();
     }));
-    new import_obsidian3.Setting(containerEl).setName(tr("Execut\xE1vel Node.js", "Node.js executable")).setDesc(tr("Use 'node' ou um caminho absoluto. No macOS, tente /opt/homebrew/bin/node.", "Use 'node' or an absolute path. On macOS, try /opt/homebrew/bin/node.")).addText((text) => text.setValue(this.plugin.settings.nodeExecutable).onChange(async (value) => {
+    new import_obsidian4.Setting(containerEl).setName(tr("Execut\xE1vel Node.js", "Node.js executable")).setDesc(tr("Use 'node' ou um caminho absoluto. No macOS, tente /opt/homebrew/bin/node.", "Use 'node' or an absolute path. On macOS, try /opt/homebrew/bin/node.")).addText((text) => text.setValue(this.plugin.settings.nodeExecutable).onChange(async (value) => {
       this.plugin.settings.nodeExecutable = value.trim() || "node";
       await this.plugin.saveSettings();
     }));
-    new import_obsidian3.Setting(containerEl).setName(tr("Porta local", "Local port")).setDesc(tr("Porta usada pela ponte Axum.", "Port used by the Axum bridge.")).addText((text) => text.setValue(String(this.plugin.settings.port)).onChange(async (value) => {
+    new import_obsidian4.Setting(containerEl).setName(tr("Porta local", "Local port")).setDesc(tr("Porta usada pela ponte Axum.", "Port used by the Axum bridge.")).addText((text) => text.setValue(String(this.plugin.settings.port)).onChange(async (value) => {
       const port = Number.parseInt(value, 10);
       if (port >= 1024 && port <= 65535) this.plugin.settings.port = port;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian3.Setting(containerEl).setName(tr("Tipo de t\xFAnel", "Tunnel type")).setDesc(tr("Quick Tunnel \xE9 tempor\xE1rio; Named Tunnel \xE9 indicado para uso recorrente.", "Quick Tunnel is temporary; Named Tunnel is recommended for recurring use.")).addDropdown((dropdown) => dropdown.addOption("quick", "Cloudflare Quick Tunnel").addOption("named", "Cloudflare Named Tunnel").setValue(this.plugin.settings.tunnelMode).onChange(async (value) => {
+    new import_obsidian4.Setting(containerEl).setName(tr("Tipo de t\xFAnel", "Tunnel type")).setDesc(tr("Quick Tunnel \xE9 tempor\xE1rio; Named Tunnel \xE9 indicado para uso recorrente.", "Quick Tunnel is temporary; Named Tunnel is recommended for recurring use.")).addDropdown((dropdown) => dropdown.addOption("quick", "Cloudflare Quick Tunnel").addOption("named", "Cloudflare Named Tunnel").setValue(this.plugin.settings.tunnelMode).onChange(async (value) => {
       this.plugin.settings.tunnelMode = value;
       await this.plugin.saveSettings();
       this.display();
     }));
     if (this.plugin.settings.tunnelMode === "named") {
-      new import_obsidian3.Setting(containerEl).setName(tr("URL do Named Tunnel", "Named Tunnel URL")).addText((text) => text.setValue(this.plugin.settings.tunnelUrl).onChange(async (value) => {
+      new import_obsidian4.Setting(containerEl).setName(tr("URL do Named Tunnel", "Named Tunnel URL")).addText((text) => text.setValue(this.plugin.settings.tunnelUrl).onChange(async (value) => {
         this.plugin.settings.tunnelUrl = value.trim();
         await this.plugin.saveSettings();
       }));
-      new import_obsidian3.Setting(containerEl).setName(tr("Arquivo do token do t\xFAnel", "Tunnel token file")).addText((text) => text.setValue(this.plugin.settings.tunnelTokenFile).onChange(async (value) => {
+      new import_obsidian4.Setting(containerEl).setName(tr("Arquivo do token do t\xFAnel", "Tunnel token file")).addText((text) => text.setValue(this.plugin.settings.tunnelTokenFile).onChange(async (value) => {
         this.plugin.settings.tunnelTokenFile = value.trim();
         await this.plugin.saveSettings();
       }));
     }
-    new import_obsidian3.Setting(containerEl).setName(tr("Pastas exclu\xEDdas", "Excluded folders")).setDesc(tr("Uma pasta por linha ou separada por v\xEDrgulas.", "One folder per line or separated by commas.")).addTextArea((text) => text.setValue(this.plugin.settings.excludedFolders).onChange(async (value) => {
+    new import_obsidian4.Setting(containerEl).setName(tr("Pastas exclu\xEDdas", "Excluded folders")).setDesc(tr("Uma pasta por linha ou separada por v\xEDrgulas.", "One folder per line or separated by commas.")).addTextArea((text) => text.setValue(this.plugin.settings.excludedFolders).onChange(async (value) => {
       this.plugin.settings.excludedFolders = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian3.Setting(containerEl).setName(tr("Tags exclu\xEDdas", "Excluded tags")).setDesc(tr("Inclua #. Uma tag por linha ou separada por v\xEDrgulas.", "Include #. Enter one tag per line or separate them with commas.")).addTextArea((text) => text.setValue(this.plugin.settings.excludedTags).onChange(async (value) => {
+    new import_obsidian4.Setting(containerEl).setName(tr("Tags exclu\xEDdas", "Excluded tags")).setDesc(tr("Inclua #. Uma tag por linha ou separada por v\xEDrgulas.", "Include #. Enter one tag per line or separate them with commas.")).addTextArea((text) => text.setValue(this.plugin.settings.excludedTags).onChange(async (value) => {
       this.plugin.settings.excludedTags = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian3.Setting(containerEl).setName(tr("Atualizar grafo automaticamente", "Update graph automatically")).setDesc(tr("Reexporta o snapshot ap\xF3s altera\xE7\xF5es no vault, com debounce.", "Re-exports the snapshot after vault changes, with debounce.")).addToggle((toggle) => toggle.setValue(this.plugin.settings.autoExport).onChange(async (value) => {
+    new import_obsidian4.Setting(containerEl).setName(tr("Atualizar grafo automaticamente", "Update graph automatically")).setDesc(tr("Reexporta o snapshot ap\xF3s altera\xE7\xF5es no vault, com debounce.", "Re-exports the snapshot after vault changes, with debounce.")).addToggle((toggle) => toggle.setValue(this.plugin.settings.autoExport).onChange(async (value) => {
       this.plugin.settings.autoExport = value;
       await this.plugin.saveSettings();
     }));
-    const sessionSetting = new import_obsidian3.Setting(containerEl).setName(tr("Sess\xE3o AR", "AR session")).setDesc(this.plugin.sessionStatus);
+    const sessionSetting = new import_obsidian4.Setting(containerEl).setName(tr("Sess\xE3o AR", "AR session")).setDesc(this.plugin.sessionStatus);
     sessionSetting.addButton((button) => button.setCta().setButtonText(tr("Iniciar AR", "Start AR")).onClick(async () => {
       button.setDisabled(true).setButtonText(tr("Iniciando\u2026", "Starting\u2026"));
       try {

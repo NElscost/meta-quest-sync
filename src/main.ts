@@ -19,6 +19,7 @@ import { setLanguagePreference, tr, type LanguagePreference } from "./i18n";
 import { renderIucnStatus, renderSpeciesMap } from "./species-map";
 import { renderIucn } from "./iucn";
 import { renderFasta } from "./fasta";
+import { AudioSpectralRenderChild } from "./audio-spectral";
 
 interface ObsidianArSettings {
   interfaceLanguage: LanguagePreference;
@@ -152,11 +153,17 @@ export default class ObsidianArPlugin extends Plugin {
       callback: () => void this.stopAr()
     });
     this.registerMarkdownCodeBlockProcessor("species-map", (source, element, context) => {
-      void renderSpeciesMap(source, element, { analyzeAudio: (url) => this.analyzeRegionalAudio(context.sourcePath, url) });
+      void renderSpeciesMap(source, element, { analyzeAudio: (url) => this.analyzeAudio(context.sourcePath, url) });
     });
     this.registerMarkdownCodeBlockProcessor("iucn", (source, element) => renderIucn(source, element));
     this.registerMarkdownCodeBlockProcessor("fasta", (source, element) => renderFasta(source, element));
-    this.registerMarkdownPostProcessor((element) => renderIucnStatus(element));
+    this.registerMarkdownPostProcessor((element, context) => {
+      renderIucnStatus(element);
+      context.addChild(new AudioSpectralRenderChild(element, {
+        resolveSource: (audio) => this.resolveAudioSource(context.sourcePath, audio),
+        analyzeAudio: (source) => this.analyzeAudio(context.sourcePath, source)
+      }));
+    });
     this.addSettingTab(new ObsidianArSettingTab(this.app, this));
     this.registerEvent(this.app.vault.on("create", this.exportGraphDebounced));
     this.registerEvent(this.app.vault.on("delete", this.exportGraphDebounced));
@@ -240,14 +247,34 @@ export default class ObsidianArPlugin extends Plugin {
     return this.startPromise;
   }
 
-  private async analyzeRegionalAudio(notePath: string, url: string): Promise<unknown> {
+  private resolveAudioSource(notePath: string, audio: HTMLAudioElement): string | null {
+    const embedded = audio.closest<HTMLElement>(".internal-embed")?.getAttribute("src")
+      ?? audio.dataset.path ?? audio.getAttribute("data-path") ?? audio.getAttribute("src") ?? audio.currentSrc;
+    if (!embedded) return null;
+    if (/^https:\/\//iu.test(embedded)) return embedded;
+    if (/^app:\/\//iu.test(embedded)) {
+      try {
+        const decoded = decodeURIComponent(new URL(embedded).pathname).replace(/^\/+|\\/gu, "/");
+        const vault = this.vaultPath().replace(/\\/gu, "/").replace(/^\/+|\/+$/gu, "");
+        const index = decoded.toLowerCase().indexOf(vault.toLowerCase());
+        if (index >= 0) return decoded.slice(index + vault.length).replace(/^\/+/, "");
+      } catch { return null; }
+    }
+    const clean = embedded.split(/[?#]/u, 1)[0];
+    return this.app.metadataCache.getFirstLinkpathDest(clean, notePath)?.path ?? clean.replace(/^\/+/, "");
+  }
+
+  private async analyzeAudio(notePath: string, source: string): Promise<unknown> {
     if (!this.activeSession && !(await this.startAr())) throw new Error(tr("Não foi possível iniciar a ponte de análise.", "Could not start the analysis bridge."));
     const session = this.activeSession;
     if (!session) throw new Error(tr("A sessão de análise não está ativa.", "The analysis session is not active."));
+    const remote = /^https:\/\//iu.test(source);
+    const endpoint = remote ? "remote-spectral-analysis" : "spectral-analysis";
+    const body = remote ? { notePath, url: source } : { notePath, assetPath: source };
     const response = await requestUrl({
-      url: `${session.url.replace(/\/+$/u, "")}/remote-spectral-analysis`, method: "POST",
+      url: `${session.url.replace(/\/+$/u, "")}/${endpoint}`, method: "POST",
       headers: { Authorization: `Bearer ${session.token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ note_path: notePath, url })
+      body: JSON.stringify(body)
     });
     if (response.status < 200 || response.status >= 300) throw new Error(`Spectral analysis HTTP ${response.status}`);
     return response.json;

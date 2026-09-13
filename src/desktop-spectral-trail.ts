@@ -1,5 +1,5 @@
 type SpectralPoint={timeMs:number;frequencyHz:number;amplitude:number;spectralFlux:number;tonality:number;flatness:number;spectralSpreadHz:number;spectralCrest:number;xyz:[number,number,number]};
-type SpectralAnalysis={method?:string;durationMs?:number;points?:SpectralPoint[]};
+type SpectralAnalysis={method?:string;duration?:number;durationMs?:number;points?:SpectralPoint[]};
 type TrailPoint={time:number;x:number;y:number;z:number;hue:number;strength:number};
 
 function hsl(h:number,s:number,l:number,a:number){return `hsla(${h},${s}%,${l}%,${a})`;}
@@ -7,7 +7,7 @@ function prepare(value:unknown):{points:TrailPoint[];duration:number}{
   const data=value as SpectralAnalysis;
   if(!String(data?.method||"").match(/^(hybrid64-robust-pca3|mfcc40-pca3)/u)||!Array.isArray(data.points))throw new Error("A ponte não retornou uma análise PCA compatível.");
   let smooth=[0,0,0];const points=data.points.slice(0,32768).map((point,index)=>{const xyz=point.xyz||[0,0,0],amp=Math.max(0,Number(point.amplitude)||0)/255,flux=Math.max(0,Number(point.spectralFlux)||0)/255,tonality=Math.max(0,Number(point.tonality)||0)/255,response=.16+flux*.25+(1-tonality)*.12,target=[(Number(xyz[0])||0)/32767,(Number(xyz[1])||0)/32767,(Number(xyz[2])||0)/32767];smooth=index? smooth.map((n,axis)=>n+(target[axis]-n)*response):target;const hz=Math.max(20,Number(point.frequencyHz)||20),ratio=Math.max(0,Math.min(1,Math.log2(hz/20)/Math.log2(18000/20)));return{time:(Number(point.timeMs)||0)/1000,x:smooth[0],y:smooth[1],z:smooth[2],hue:250-ratio*235,strength:.16+tonality*.58+amp*.26};});
-  return{points,duration:Math.max((Number(data.durationMs)||0)/1000,points.at(-1)?.time||0)};
+  return{points,duration:Math.max(Number(data.duration)||0,(Number(data.durationMs)||0)/1000,points.at(-1)?.time||0)};
 }
 
 export function mountDesktopSpectralTrail(audio:HTMLAudioElement,host:HTMLElement,loadAnalysis:()=>Promise<unknown>){

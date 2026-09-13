@@ -57,3 +57,7 @@
 .meta-quest-spectral-canvas{display:block;width:100%;height:auto;aspect-ratio:2/1;cursor:grab;touch-action:none}
 .meta-quest-spectral-canvas:active{cursor:grabbing}
 @media(max-width:700px){.meta-quest-species-sound{grid-template-columns:1fr}.meta-quest-spectral-toolbar{flex-wrap:wrap}}
+
+.meta-quest-audio-spectral-controls{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;margin:.35rem 0 .8rem}
+.meta-quest-audio-spectral-button{white-space:nowrap}
+.meta-quest-audio-spectral-controls>.meta-quest-spectral-desktop{flex:1 0 100%}

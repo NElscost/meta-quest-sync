@@ -13,7 +13,7 @@ test("species map pans on pointer release without rerasterizing during movement"
   assert.match(source, /c\.center=centerAfterDrag/);
   assert.match(source, /drag to pan/);
   assert.match(source, /regionLabel/);
-  assert.match(source, /name:regionLabel/);
+  assert.match(source, /stateName\?stateName\+\", Brazil\":regionLabel/);
   assert.match(source, /image\/webp/);
   assert.match(source, /optimizedImageUrl/);
   assert.match(source, /1280,720/);
@@ -24,4 +24,7 @@ test("species map pans on pointer release without rerasterizing during movement"
   assert.match(source, /pointerleave/);
   assert.match(source, /event\.deltaY<0/);
   assert.match(source, /loadBoundary\(point\.lat,point\.lon\)/);
+  assert.match(source, /rasterBrazil/);
+  assert.match(source, /stateAt\(point\.lat,point\.lon\)/);
+  assert.match(source, /params\.state_province=stateName/);
 });

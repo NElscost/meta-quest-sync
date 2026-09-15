@@ -2,6 +2,7 @@ export interface PairingPayload {
   url: string;
   token: string;
   dynamicGraph: true;
+  language: "pt" | "en";
 }
 
 export function base64UrlEncode(value: string): string {
@@ -15,7 +16,8 @@ export function base64UrlEncode(value: string): string {
 export function createPairingUrl(
   viewerUrl: string,
   bridgeUrl: string,
-  token: string
+  token: string,
+  language: "pt" | "en"
 ): string {
   const viewer = new URL(viewerUrl);
   if (viewer.protocol !== "https:") throw new Error(tr("O visualizador precisa usar HTTPS.", "The viewer must use HTTPS."));
@@ -24,7 +26,8 @@ export function createPairingUrl(
   const payload: PairingPayload = {
     url: bridge.origin,
     token,
-    dynamicGraph: true
+    dynamicGraph: true,
+    language
   };
   viewer.hash = `obsidian-ar=${base64UrlEncode(JSON.stringify(payload))}`;
   return viewer.toString();

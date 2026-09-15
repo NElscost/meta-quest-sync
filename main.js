@@ -4673,7 +4673,7 @@ function tr(portuguese, english) {
 function base64UrlEncode(value) {
   return Buffer.from(value, "utf8").toString("base64").replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
 }
-function createPairingUrl(viewerUrl, bridgeUrl, token) {
+function createPairingUrl(viewerUrl, bridgeUrl, token, language) {
   const viewer = new URL(viewerUrl);
   if (viewer.protocol !== "https:") throw new Error(tr("O visualizador precisa usar HTTPS.", "The viewer must use HTTPS."));
   const bridge = new URL(bridgeUrl);
@@ -4681,7 +4681,8 @@ function createPairingUrl(viewerUrl, bridgeUrl, token) {
   const payload = {
     url: bridge.origin,
     token,
-    dynamicGraph: true
+    dynamicGraph: true,
+    language
   };
   viewer.hash = `obsidian-ar=${base64UrlEncode(JSON.stringify(payload))}`;
   return viewer.toString();
@@ -4714,6 +4715,7 @@ var SessionManager = class {
     const configPath = import_node_path.default.join(settings.projectRoot, "note-bridge.config.json");
     const config = {
       vaultPath,
+      port: settings.port,
       tunnelMode: settings.tunnelMode,
       tunnelUrl: settings.tunnelUrl.trim().replace(/\/+$/u, ""),
       tunnelTokenFile: settings.tunnelTokenFile.trim() || ".cloudflare-tunnel-token"
@@ -4721,7 +4723,35 @@ var SessionManager = class {
     await import_node_fs.promises.writeFile(configPath, `${JSON.stringify(config, null, 2)}
 `, "utf8");
   }
+  async attach(settings) {
+    const statePath = import_node_path.default.join(settings.projectRoot, ".note-bridge-processes.json");
+    const tokenPath = import_node_path.default.join(settings.projectRoot, ".note-bridge-token");
+    if (!await exists(statePath) || !await exists(tokenPath)) return null;
+    try {
+      const state = parseProcessState(await import_node_fs.promises.readFile(statePath, "utf8"));
+      const token = (await import_node_fs.promises.readFile(tokenPath, "utf8")).trim();
+      const port = Number.isInteger(state.port) ? state.port : settings.port;
+      if (port !== settings.port || token.length < 32) return null;
+      const localUrl = `http://127.0.0.1:${port}`;
+      const response = await fetch(`${localUrl}/verify`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(1800)
+      });
+      if (!response.ok) return null;
+      const verification = await response.json();
+      const capabilities = verification.capabilities ?? [];
+      if (!capabilities.includes("waveform") || !capabilities.includes("mfcc-pca")) return null;
+      return { ...state, url: state.url?.startsWith("https://") ? state.url : localUrl, localUrl, token };
+    } catch {
+      return null;
+    }
+  }
   async start(settings, reportStatus = () => void 0) {
+    const attached = await this.attach(settings);
+    if (attached) {
+      reportStatus(tr("Ponte existente reutilizada na mesma porta.", "Existing bridge reused on the same port."));
+      return attached;
+    }
     const script = import_node_path.default.join(settings.projectRoot, "Scripts", "note-bridge.mjs");
     if (!await exists(script)) throw new Error(tr(`${import_node_path.default.basename(script)} n\xE3o foi encontrado.`, `${import_node_path.default.basename(script)} was not found.`));
     const statePath = import_node_path.default.join(settings.projectRoot, ".note-bridge-processes.json");
@@ -4758,7 +4788,7 @@ var SessionManager = class {
             const token = (await import_node_fs.promises.readFile(tokenPath, "utf8")).trim();
             if (state.url?.startsWith("https://") && token.length >= 32) {
               reportStatus(tr("Sess\xE3o pronta. Abrindo o QR Code\u2026", "Session ready. Opening the QR code\u2026"));
-              return { ...state, token };
+              return { ...state, localUrl: `http://127.0.0.1:${state.port ?? settings.port}`, token };
             }
           }
         } catch {
@@ -4807,6 +4837,21 @@ var SessionManager = class {
 var import_obsidian2 = require("obsidian");
 
 // src/desktop-spectral-trail.ts
+function spectralFrequencyRange(value) {
+  const raw = value?.points;
+  if (!Array.isArray(raw)) return null;
+  const usable = raw.map((p) => ({ hz: Number(p.frequencyHz), weight: Math.max(0, Number(p.amplitude) || 0) })).filter((p) => Number.isFinite(p.hz) && p.hz >= 20 && p.weight >= 18).sort((a, b) => a.hz - b.hz);
+  if (!usable.length) return null;
+  const total = usable.reduce((sum, p) => sum + p.weight, 0), percentile = (ratio) => {
+    let sum = 0;
+    for (const p of usable) {
+      sum += p.weight;
+      if (sum >= total * ratio) return p.hz;
+    }
+    return usable.at(-1).hz;
+  };
+  return { minHz: Math.round(percentile(0.03)), maxHz: Math.round(percentile(0.97)) };
+}
 function hsl(h, s, l, a) {
   return `hsla(${h},${s}%,${l}%,${a})`;
 }
@@ -4818,18 +4863,44 @@ function prepare(value) {
     const xyz = point.xyz || [0, 0, 0], amp = Math.max(0, Number(point.amplitude) || 0) / 255, flux = Math.max(0, Number(point.spectralFlux) || 0) / 255, tonality = Math.max(0, Number(point.tonality) || 0) / 255, response = 0.16 + flux * 0.25 + (1 - tonality) * 0.12, target = [(Number(xyz[0]) || 0) / 32767, (Number(xyz[1]) || 0) / 32767, (Number(xyz[2]) || 0) / 32767];
     smooth = index ? smooth.map((n, axis) => n + (target[axis] - n) * response) : target;
     const hz = Math.max(20, Number(point.frequencyHz) || 20), ratio = Math.max(0, Math.min(1, Math.log2(hz / 20) / Math.log2(18e3 / 20)));
-    return { time: (Number(point.timeMs) || 0) / 1e3, x: smooth[0], y: smooth[1], z: smooth[2], hue: 250 - ratio * 235, strength: 0.16 + tonality * 0.58 + amp * 0.26 };
+    return { time: (Number(point.timeMs) || 0) / 1e3, x: smooth[0], y: smooth[1], z: smooth[2], hue: 250 - ratio * 235, strength: 0.16 + tonality * 0.58 + amp * 0.26, frequencyHz: hz, amplitude: amp };
   });
   return { points, duration: Math.max(Number(data.duration) || 0, (Number(data.durationMs) || 0) / 1e3, points.at(-1)?.time || 0) };
 }
-function mountDesktopSpectralTrail(audio, host, loadAnalysis) {
+function mountDesktopSpectralTrail(audio, host, loadAnalysis, options = {}) {
   const shell = host.createDiv({ cls: "meta-quest-spectral-desktop" }), toolbar = shell.createDiv({ cls: "meta-quest-spectral-toolbar" });
-  toolbar.createSpan({ text: "Identidade espectral 3D \xB7 PCA h\xEDbrida" });
-  const rotate = toolbar.createEl("button", { text: "Rota\xE7\xE3o: desligada" }), reset = toolbar.createEl("button", { text: "Redefinir c\xE2mera" }), status = toolbar.createSpan({ text: "Analisando \xE1udio\u2026" });
-  const canvas = shell.createEl("canvas", { cls: "meta-quest-spectral-canvas", attr: { width: "960", height: "480", "aria-label": "Identidade espectral tridimensional h\xEDbrida" } }), ctx = canvas.getContext("2d");
-  let points = [], duration = 0, yaw = -0.55, pitch = 0.28, auto = false, drag = null, frame = 0, disposed = false;
+  toolbar.createSpan({ text: tr("Identidade espectral 3D \xB7 PCA h\xEDbrida", "3D spectral identity \xB7 hybrid PCA") });
+  const rotate = toolbar.createEl("button", { text: tr("Rota\xE7\xE3o: desligada", "Rotation: off") }), shape = toolbar.createEl("button", { text: tr("Forma: linhas", "Shape: lines") }), zoomOut = toolbar.createEl("button", { text: "Zoom \u2212", attr: { "aria-label": "Reduzir zoom" } }), zoomIn = toolbar.createEl("button", { text: "Zoom +", attr: { "aria-label": "Aumentar zoom" } }), reset = toolbar.createEl("button", { text: tr("Redefinir c\xE2mera", "Reset camera") }), status = toolbar.createSpan({ text: tr("Analisando \xE1udio\u2026", "Analyzing audio\u2026") });
+  const savedKey = options.storageKey ? `meta-quest-spectral-frequency:${options.storageKey}` : "meta-quest-spectral-frequency:default";
+  let saved = {};
+  try {
+    saved = JSON.parse(localStorage.getItem(savedKey) || "{}");
+  } catch {
+  }
+  const filters = shell.createDiv({ cls: "meta-quest-spectral-filters" });
+  const numeric = (label2, value, min, max, step) => {
+    const wrap = filters.createEl("label");
+    wrap.createSpan({ text: label2 });
+    return wrap.createEl("input", { type: "number", value, attr: { min, max, step } });
+  };
+  const minHz = numeric(tr("Hz m\xEDn.", "Min Hz"), String(saved.minHz ?? 0), "0", "24000", "100"), maxHz = numeric(tr("Hz m\xE1x.", "Max Hz"), String(saved.maxHz ?? 18e3), "100", "48000", "100"), minIntensity = numeric(tr("Intensidade m\xEDn. %", "Min intensity %"), "0", "0", "100", "1"), windowSeconds = numeric(tr("Janela (s)", "Window (s)"), "3.25", "0.25", "30", "0.25"), labelDensity = numeric(tr("Labels %", "Labels %"), "18", "1", "100", "1"), saveHz = filters.createEl("button", { text: tr("Salvar Hz", "Save Hz") });
+  saveHz.onclick = () => {
+    localStorage.setItem(savedKey, JSON.stringify({ minHz: Number(minHz.value) || 0, maxHz: Number(maxHz.value) || 18e3 }));
+    saveHz.setText(tr("Hz salvos \u2713", "Hz saved \u2713"));
+    window.setTimeout(() => saveHz.setText(tr("Salvar Hz", "Save Hz")), 1400);
+  };
+  shell.createDiv({ cls: "meta-quest-spectral-explanation", text: "Eixos PCA: combina\xE7\xF5es dos 40 coeficientes MFCC. Eles descrevem forma, contraste e textura do timbre; n\xE3o representam uma frequ\xEAncia isolada." });
+  const canvas = shell.createEl("canvas", { cls: "meta-quest-spectral-canvas", attr: { width: "960", height: "480", "aria-label": "Identidade espectral tridimensional h\xEDbrida; use a roda do mouse para zoom" } }), ctx = canvas.getContext("2d");
+  const dashboard = shell.createDiv({ cls: "meta-quest-spectral-dashboard" });
+  const panelTitles = [tr("Descritores Hz", "Hz descriptors"), tr("Din\xE2mica dB", "dB dynamics"), tr("Mapa tonal", "Tone map"), tr("Janela temporal", "Time window"), tr("Proje\xE7\xE3o cepstral", "Cepstral projection"), tr("Perfil crom\xE1tico derivado", "Derived chroma profile")];
+  const panelCanvases = panelTitles.map((title) => {
+    const panel = dashboard.createDiv({ cls: "meta-quest-spectral-panel" });
+    panel.createDiv({ cls: "meta-quest-spectral-panel-title", text: title });
+    return panel.createEl("canvas", { attr: { width: "420", height: "150" } });
+  });
+  let points = [], duration = 0, yaw = -0.55, pitch = 0.28, zoom = 1, auto = false, rectangles = false, drag = null, frame = 0, disposed = false;
   const project = (p) => {
-    const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch), x = p.x * cy - p.z * sy, z = p.x * sy + p.z * cy, y = p.y * cp - z * sp, depth = p.y * sp + z * cp + 3.2, scale = 310 / depth;
+    const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch), x = p.x * cy - p.z * sy, z = p.x * sy + p.z * cy, y = p.y * cp - z * sp, depth = p.y * sp + z * cp + 3.2, scale = 310 * zoom / depth;
     return { x: canvas.width / 2 + x * scale, y: canvas.height * 0.55 - y * scale, visible: depth > 0.2 };
   };
   const line = (a, b, color = "rgba(112,151,190,.2)") => {
@@ -4855,9 +4926,56 @@ function mountDesktopSpectralTrail(audio, host, loadAnalysis) {
       line({ x: -1, y: -1, z: i / 5 }, { x: 1, y: -1, z: i / 5 });
       line({ x: -1, y: i / 5, z: -1 }, { x: 1, y: i / 5, z: -1 });
     }
-    label("COMPONENTE 1", { x: 0.55, y: -1, z: 1 });
-    label("COMPONENTE 2", { x: -1, y: 0.75, z: -1 });
-    label("COMPONENTE 3", { x: 1, y: -1, z: 0.35 });
+    label("PC1 \xB7 forma do espectro (MFCC)", { x: 0.34, y: -1, z: 1 });
+    label("PC2 \xB7 contraste t\xEDmbrico (MFCC)", { x: -1, y: 0.72, z: -1 });
+    label("PC3 \xB7 textura espectral (MFCC)", { x: 1, y: -1, z: 0.16 });
+  }
+  function renderPanels(selected) {
+    panelCanvases.forEach((c, index) => {
+      const x = c.getContext("2d");
+      if (!x) return;
+      x.fillStyle = "#030810";
+      x.fillRect(0, 0, c.width, c.height);
+      x.strokeStyle = "rgba(110,145,180,.18)";
+      for (let g = 1; g < 5; g++) {
+        x.beginPath();
+        x.moveTo(0, g * c.height / 5);
+        x.lineTo(c.width, g * c.height / 5);
+        x.stroke();
+      }
+      if (!selected.length) return;
+      for (let i = 0; i < selected.length; i++) {
+        const p = selected[i], px = i / Math.max(1, selected.length - 1) * c.width, fy = 1 - Math.min(1, p.frequencyHz / 18e3), ay = 1 - p.amplitude;
+        x.strokeStyle = hsl(p.hue, 88, 58, 0.52);
+        x.fillStyle = hsl(p.hue, 88, 58, 0.62);
+        if (index === 0 || index === 3) {
+          if (i) {
+            const q = selected[i - 1];
+            x.beginPath();
+            x.moveTo((i - 1) / Math.max(1, selected.length - 1) * c.width, (1 - Math.min(1, q.frequencyHz / 18e3)) * c.height);
+            x.lineTo(px, fy * c.height);
+            x.stroke();
+          }
+          if (index === 3) {
+            const newest = i === selected.length - 1, size = 3 + p.amplitude * 7;
+            x.save();
+            x.strokeStyle = newest ? "rgba(255,255,255,.94)" : hsl(p.hue, 90, 64, 0.78);
+            x.shadowColor = newest ? "rgba(255,255,255,.28)" : hsl(p.hue, 90, 60, 0.3);
+            x.shadowBlur = 3;
+            x.strokeRect(px - size / 2, fy * c.height - size / 2, size, size);
+            x.restore();
+          }
+        } else if (index === 1) {
+          x.fillRect(px, ay * c.height, 2, c.height - ay * c.height);
+        } else if (index === 2) {
+          x.fillRect(Math.min(1, p.frequencyHz / 18e3) * c.width, ay * c.height, 2, 2);
+        } else if (index === 4) {
+          x.fillRect((p.x + 1) * 0.5 * c.width, (1 - (p.y + 1) * 0.5) * c.height, 2.5, 2.5);
+        } else {
+          x.fillRect(((Math.round(12 * Math.log2(Math.max(20, p.frequencyHz) / 440)) + 69) % 12 + 12) % 12 / 12 * c.width, ay * c.height, 3, c.height - ay * c.height);
+        }
+      }
+    });
   }
   function render() {
     if (disposed || !ctx) return;
@@ -4865,13 +4983,12 @@ function mountDesktopSpectralTrail(audio, host, loadAnalysis) {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     grid();
     if (auto) yaw += 25e-4;
-    const identity = audio.ended || duration > 0 && audio.currentTime >= duration - 0.08 && audio.paused, start = identity ? 0 : Math.max(0, audio.currentTime - 3.25), end = identity ? duration : audio.currentTime;
+    const identity = audio.ended || duration > 0 && audio.currentTime >= duration - 0.08 && audio.paused, windowSize = Math.max(0.25, Number(windowSeconds.value) || 3.25), low = Math.max(0, Number(minHz.value) || 0), high = Math.max(low, Number(maxHz.value) || 18e3), threshold = Math.max(0, Number(minIntensity.value) || 0) / 100, labelEvery = Math.max(1, Math.round(100 / Math.max(1, Number(labelDensity.value) || 18))), start = identity ? 0 : Math.max(0, audio.currentTime - windowSize), end = identity ? duration : audio.currentTime;
     let previous = null;
-    for (const point of points) {
-      if (point.time < start || point.time > end) {
-        previous = null;
-        continue;
-      }
+    const selected = points.filter((point) => point.time >= start && point.time <= end && point.frequencyHz >= low && point.frequencyHz <= high && point.amplitude >= threshold);
+    let visibleIndex = 0;
+    for (const point of selected) {
+      visibleIndex++;
       const current = project(point);
       if (previous && current.visible) {
         const alpha = identity ? Math.max(0.18, point.strength * 0.72) : point.strength * Math.max(0.12, 1 - (end - point.time) / 3.25);
@@ -4881,22 +4998,65 @@ function mountDesktopSpectralTrail(audio, host, loadAnalysis) {
         ctx.moveTo(previous.x, previous.y);
         ctx.lineTo(current.x, current.y);
         ctx.stroke();
+        if (rectangles) {
+          const size = 4 + point.strength * 7;
+          ctx.fillStyle = hsl(point.hue, 82, 58, Math.max(0.22, alpha * 0.72));
+          ctx.fillRect(current.x - size / 2, current.y - size / 2, size, size);
+          if (visibleIndex % labelEvery === 0) {
+            ctx.fillStyle = "rgba(244,247,255,.9)";
+            ctx.font = "9px system-ui";
+            const hz = point.frequencyHz >= 1e3 ? `${(point.frequencyHz / 1e3).toFixed(2)}kHz` : `${Math.round(point.frequencyHz)}Hz`;
+            ctx.fillText(`${point.time.toFixed(2)}s`, current.x + 8, current.y - 7);
+            ctx.fillText(`${hz} \xB7 ${point.amplitude.toFixed(3)}`, current.x + 8, current.y + 5);
+            const age = Math.max(0, end - point.time), birth = Math.max(0, Math.min(1, 1 - age / 0.22));
+            ctx.save();
+            ctx.strokeStyle = birth > 0 ? `rgba(255,255,255,${(0.72 + birth * 0.25).toFixed(3)})` : hsl(point.hue, 90, 64, 0.86);
+            ctx.shadowColor = birth > 0 ? "rgba(255,255,255,.3)" : hsl(point.hue, 90, 60, 0.28);
+            ctx.shadowBlur = 3;
+            ctx.strokeRect(current.x - size / 2 - 2, current.y - size / 2 - 2, size + 4, size + 4);
+            ctx.restore();
+          }
+        }
       }
       previous = current;
     }
+    renderPanels(selected);
+    if (identity) {
+      const gradient = ctx.createLinearGradient(24, 0, canvas.width - 24, 0);
+      for (let i = 0; i <= 12; i++) gradient.addColorStop(i / 12, hsl(250 - i / 12 * 235, 90, 56, 1));
+      ctx.fillStyle = gradient;
+      ctx.fillRect(24, canvas.height - 22, canvas.width - 48, 8);
+      ctx.fillStyle = "rgba(225,239,255,.78)";
+      ctx.font = "11px system-ui";
+      ctx.fillText(tr("ESPECTRO 20 Hz \u2192 18 kHz", "SPECTRUM 20 Hz \u2192 18 kHz"), 24, canvas.height - 28);
+    }
     ctx.fillStyle = "rgba(224,238,252,.72)";
     ctx.font = "20px system-ui";
-    ctx.fillText(identity ? "assinatura completa \xB7 somente linhas" : "janela temporal atual \xB7 3,25 s", 22, 32);
+    ctx.fillText(identity ? "assinatura completa \xB7 somente linhas" : `janela temporal atual \xB7 ${windowSize.toFixed(2)} s`, 22, 32);
     frame = requestAnimationFrame(render);
   }
+  const setZoom = (value) => {
+    zoom = Math.max(0.45, Math.min(3.5, value));
+  };
   rotate.onclick = () => {
     auto = !auto;
-    rotate.setText(`Rota\xE7\xE3o: ${auto ? "ligada" : "desligada"}`);
+    rotate.setText(auto ? tr("Rota\xE7\xE3o: ligada", "Rotation: on") : tr("Rota\xE7\xE3o: desligada", "Rotation: off"));
   };
+  shape.onclick = () => {
+    rectangles = !rectangles;
+    shape.setText(rectangles ? tr("Forma: ret\xE2ngulos + labels", "Shape: rectangles + labels") : tr("Forma: linhas", "Shape: lines"));
+  };
+  zoomOut.onclick = () => setZoom(zoom / 1.2);
+  zoomIn.onclick = () => setZoom(zoom * 1.2);
   reset.onclick = () => {
     yaw = -0.55;
     pitch = 0.28;
+    zoom = 1;
   };
+  canvas.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    setZoom(zoom * Math.exp(-e.deltaY * 12e-4));
+  }, { passive: false });
   canvas.addEventListener("pointerdown", (e) => {
     drag = { x: e.clientX, y: e.clientY, yaw, pitch };
     canvas.setPointerCapture(e.pointerId);
@@ -4921,7 +5081,11 @@ function mountDesktopSpectralTrail(audio, host, loadAnalysis) {
   observer.observe(document.body, { childList: true, subtree: true });
   void Promise.resolve().then(loadAnalysis).then((value) => {
     ({ points, duration } = prepare(value));
-    status.setText(`${points.length.toLocaleString()} pontos \xB7 ${duration.toFixed(1)} s`);
+    const range = spectralFrequencyRange(value);
+    if (range) {
+      options.onFrequencyRange?.(range);
+      status.setText(`${points.length.toLocaleString()} pontos \xB7 ${duration.toFixed(1)} s \xB7 ${range.minHz.toLocaleString()}\u2013${range.maxHz.toLocaleString()} Hz`);
+    } else status.setText(`${points.length.toLocaleString()} pontos \xB7 ${duration.toFixed(1)} s`);
   }).catch((error) => status.setText(`An\xE1lise indispon\xEDvel: ${error instanceof Error ? error.message : String(error)}`));
   render();
   return shell;
@@ -5002,7 +5166,107 @@ async function clusters(c, key, center) {
   }
   return [...groups.values()].map((g) => ({ x: g.x / g.count, y: g.y / g.count, count: g.count }));
 }
+var BRAZIL_BOUNDS = { west: -74.2, east: -32, north: 5.6, south: -34.2 };
+var BRAZIL_STATE_NAMES = { "11": "Rond\xF4nia", "12": "Acre", "13": "Amazonas", "14": "Roraima", "15": "Par\xE1", "16": "Amap\xE1", "17": "Tocantins", "21": "Maranh\xE3o", "22": "Piau\xED", "23": "Cear\xE1", "24": "Rio Grande do Norte", "25": "Para\xEDba", "26": "Pernambuco", "27": "Alagoas", "28": "Sergipe", "29": "Bahia", "31": "Minas Gerais", "32": "Esp\xEDrito Santo", "33": "Rio de Janeiro", "35": "S\xE3o Paulo", "41": "Paran\xE1", "42": "Santa Catarina", "43": "Rio Grande do Sul", "50": "Mato Grosso do Sul", "51": "Mato Grosso", "52": "Goi\xE1s", "53": "Distrito Federal" };
+var brazilStatesPromise = null;
+function isBrazilView(c) {
+  return Math.abs(c.center[0] + 15) < 12 && Math.abs(c.center[1] + 55) < 18;
+}
+function brazilPixel(lon, lat) {
+  return { x: (lon - BRAZIL_BOUNDS.west) / (BRAZIL_BOUNDS.east - BRAZIL_BOUNDS.west) * 720 + 90, y: (BRAZIL_BOUNDS.north - lat) / (BRAZIL_BOUNDS.north - BRAZIL_BOUNDS.south) * 520 + 42 };
+}
+function statePolygons(geometry) {
+  return geometry?.type === "MultiPolygon" ? geometry.coordinates : geometry?.type === "Polygon" ? [geometry.coordinates] : [];
+}
+function pointInRing(point, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i], b = ring[j];
+    if (a[1] > point[1] !== b[1] > point[1] && point[0] < (b[0] - a[0]) * (point[1] - a[1]) / (b[1] - a[1] || 1e-9) + a[0]) inside = !inside;
+  }
+  return inside;
+}
+function pointInState(point, geometry) {
+  return statePolygons(geometry).some((polygon) => pointInRing(point, polygon[0]) && !polygon.slice(1).some((hole) => pointInRing(point, hole)));
+}
+function drawBrazilGeometry(ctx, geometry) {
+  for (const polygon of statePolygons(geometry)) for (const ring of polygon) {
+    ring.forEach(([lon, lat], index) => {
+      const q = brazilPixel(lon, lat);
+      index ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y);
+    });
+    ctx.closePath();
+  }
+}
+async function brazilStates() {
+  if (!brazilStatesPromise) brazilStatesPromise = (0, import_obsidian2.requestUrl)({ url: "https://raw.githubusercontent.com/NElscost/Obsidian-Ar/main/sites-space-ar/public/vendor/species-map/brazil-states.geojson" }).then((r) => r.json);
+  return brazilStatesPromise;
+}
+async function stateAt(lat, lon) {
+  const data = await brazilStates();
+  return data.features?.find((feature) => pointInState([lon, lat], feature.geometry)) || null;
+}
+async function rasterBrazil(c) {
+  const key = JSON.stringify(c) + ":ar-brazil-v1";
+  if (cache.has(key)) return cache.get(key);
+  const pending = (async () => {
+    const match = await (0, import_obsidian2.requestUrl)({ url: `https://api.gbif.org/v1/species/match?name=${encodeURIComponent(c.taxon)}` }), taxon = match.json, taxonKey = Number(taxon.usageKey ?? taxon.speciesKey);
+    if (!Number.isFinite(taxonKey)) throw new Error(`Taxon not found: ${c.taxon}`);
+    const [occurrences, states] = await Promise.all([(0, import_obsidian2.requestUrl)({ url: `https://api.gbif.org/v1/occurrence/search?taxon_key=${taxonKey}&country=BR&has_coordinate=true&limit=1000` }), brazilStates()]);
+    const canvas = document.createElement("canvas");
+    canvas.width = 900;
+    canvas.height = 600;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas unavailable.");
+    ctx.clearRect(0, 0, 900, 600);
+    ctx.beginPath();
+    for (const feature of states.features || []) drawBrazilGeometry(ctx, feature.geometry);
+    ctx.save();
+    ctx.clip("evenodd");
+    ctx.fillStyle = "#b3e1a9";
+    ctx.fillRect(0, 0, 900, 600);
+    for (const [color, x, y, rx, ry, rotation] of [["#7ecd6c", 275, 190, 245, 170, -0.25], ["#ffe797", 515, 285, 205, 175, 0.22], ["#ffb8a0", 600, 370, 130, 205, 0.3], ["#ffe0ee", 335, 420, 140, 75, 0]]) {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.ellipse(x, y, rx, ry, rotation, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    ctx.strokeStyle = "rgba(230,255,238,.72)";
+    ctx.lineWidth = 1;
+    for (const feature of states.features || []) {
+      ctx.beginPath();
+      drawBrazilGeometry(ctx, feature.geometry);
+      ctx.stroke();
+    }
+    ctx.fillStyle = "rgba(255,24,30,.9)";
+    for (const record of occurrences.json.results || []) {
+      const lon = Number(record.decimalLongitude), lat = Number(record.decimalLatitude);
+      if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue;
+      const q = brazilPixel(lon, lat);
+      ctx.beginPath();
+      ctx.arc(q.x, q.y, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    const name = taxon.scientificName || c.taxon;
+    ctx.fillStyle = "#f4f8ff";
+    ctx.font = "700 25px system-ui";
+    ctx.fillText(name, 92, 30);
+    ctx.fillStyle = "#ff3940";
+    ctx.font = "600 14px system-ui";
+    ctx.fillText((occurrences.json.results?.length || 0).toLocaleString() + " sampled occurrence points", 575, 574);
+    return { dataUrl: canvas.toDataURL("image/webp", 0.88), name };
+  })();
+  cache.set(key, pending);
+  try {
+    return await pending;
+  } catch (error) {
+    cache.delete(key);
+    throw error;
+  }
+}
 async function raster(c) {
+  if (isBrazilView(c)) return rasterBrazil(c);
   const key = JSON.stringify(c);
   if (cache.has(key)) return cache.get(key);
   const pending = (async () => {
@@ -5084,6 +5348,7 @@ function centerAfterDrag(center, dx, dy, zoom, width, height) {
   return [newLat, lon];
 }
 function boundaryPixel(c, lon, lat) {
+  if (isBrazilView(c)) return brazilPixel(lon, lat);
   const center = tile(c.center[0], c.center[1], c.zoom), scale = center.scale, r = Math.max(-85.0511, Math.min(85.0511, lat)) * Math.PI / 180;
   let x = (lon + 180) / 360 * scale;
   while (x < center.x - 1) x += scale;
@@ -5112,6 +5377,7 @@ function drawBoundary(canvas, c, geometry) {
   ctx.stroke();
 }
 async function loadBoundary(lat, lon) {
+  if (lat <= BRAZIL_BOUNDS.north && lat >= BRAZIL_BOUNDS.south && lon >= BRAZIL_BOUNDS.west && lon <= BRAZIL_BOUNDS.east) return (await stateAt(lat, lon))?.geometry || null;
   const q = new URLSearchParams({ format: "jsonv2", lat: String(lat), lon: String(lon), zoom: "5", polygon_geojson: "1" }), response = await (0, import_obsidian2.requestUrl)({ url: "https://nominatim.openstreetmap.org/reverse?" + q, headers: { "Accept-Language": "en", "User-Agent": "MetaQuestSync/0.1" } }), geometry = response.json?.geojson;
   return geometry && (geometry.type === "Polygon" || geometry.type === "MultiPolygon") ? geometry : null;
 }
@@ -5124,19 +5390,26 @@ function regionLabel(results, lat, lon) {
   return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] || lat.toFixed(2) + "\xB0, " + lon.toFixed(2) + "\xB0";
 }
 function mapCoordinate(c, u, v) {
+  if (isBrazilView(c)) return { lon: BRAZIL_BOUNDS.west + Math.max(0, Math.min(1, (u * 900 - 90) / 720)) * (BRAZIL_BOUNDS.east - BRAZIL_BOUNDS.west), lat: BRAZIL_BOUNDS.north - Math.max(0, Math.min(1, (v * 600 - 42) / 520)) * (BRAZIL_BOUNDS.north - BRAZIL_BOUNDS.south) };
   const center = tile(c.center[0], c.center[1], c.zoom), wx = center.x - 1 + Math.max(0, Math.min(1, u)) * 3, wy = center.y - 1 + Math.max(0, Math.min(1, v)) * 2;
   return { lon: wx / center.scale * 360 - 180, lat: Math.atan(Math.sinh(Math.PI * (1 - 2 * wy / center.scale))) * 180 / Math.PI };
 }
-async function loadRegion(c, u, v) {
+async function loadRegion(c, u, v, stateName = "") {
   const center = tile(c.center[0], c.center[1], c.zoom), wx = center.x - 1 + Math.max(0, Math.min(1, u)) * 3, wy = center.y - 1 + Math.max(0, Math.min(1, v)) * 2, lon = wx / center.scale * 360 - 180, lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * wy / center.scale))) * 180 / Math.PI, radius = Math.max(0.35, 55 / 2 ** c.zoom);
   const match = await (0, import_obsidian2.requestUrl)({ url: `https://api.gbif.org/v1/species/match?name=${encodeURIComponent(c.taxon)}` }), key = Number(match.json.usageKey ?? match.json.speciesKey);
   const load = async (type) => {
-    const q = new URLSearchParams({ taxon_key: String(key), has_coordinate: "true", decimal_latitude: `${Math.max(-89.9, lat - radius)},${Math.min(89.9, lat + radius)}`, decimal_longitude: `${Math.max(-179.9, lon - radius)},${Math.min(179.9, lon + radius)}`, media_type: type, limit: "30" });
+    const params = { taxon_key: String(key), has_coordinate: "true", media_type: type, limit: "30" };
+    if (stateName) params.state_province = stateName;
+    else {
+      params.decimal_latitude = `${Math.max(-89.9, lat - radius)},${Math.min(89.9, lat + radius)}`;
+      params.decimal_longitude = `${Math.max(-179.9, lon - radius)},${Math.min(179.9, lon + radius)}`;
+    }
+    const q = new URLSearchParams(params);
     return (await (0, import_obsidian2.requestUrl)({ url: "https://api.gbif.org/v1/occurrence/search?" + q })).json;
   };
   const [photos, sounds] = await Promise.all([load("StillImage"), load("Sound")]);
   const results = [...photos.results || [], ...sounds.results || []];
-  return { name: regionLabel(results, lat, lon), lat, lon, count: Math.max(photos.count || 0, sounds.count || 0), photos: photos.results.flatMap((r) => r.media || []).filter((m) => m.type === "StillImage").slice(0, 6), sounds: sounds.results.flatMap((r) => r.media || []).filter((m) => m.type === "Sound").slice(0, 4) };
+  return { name: stateName ? stateName + ", Brazil" : regionLabel(results, lat, lon), lat, lon, count: Math.max(photos.count || 0, sounds.count || 0), photos: photos.results.flatMap((r) => r.media || []).filter((m) => m.type === "StillImage").slice(0, 6), sounds: sounds.results.flatMap((r) => r.media || []).filter((m) => m.type === "Sound").slice(0, 4) };
 }
 async function optimizedImageUrl(url, maxWidth = 1920, maxHeight = 1080) {
   const response = await (0, import_obsidian2.requestUrl)({ url });
@@ -5176,7 +5449,7 @@ function showRegion(container, r, options) {
   for (const media of r.sounds) {
     const row = panel.createDiv({ cls: "meta-quest-species-sound" });
     row.createSpan({ text: media.creator || "GBIF recording" });
-    const player = row.createEl("audio", { attr: { src: media.identifier, controls: "", preload: "metadata" } }), trailButton = row.createEl("button", { text: "Rastro 3D", attr: { "aria-label": "Abrir identidade espectral em 3D" } });
+    const player = row.createEl("audio", { attr: { src: media.identifier, controls: "", preload: "metadata" } }), trailButton = row.createEl("button", { text: "Rastro 3D", attr: { "aria-label": "Abrir identidade espectral em 3D" } }), frequency = row.createSpan({ cls: "meta-quest-species-frequency", text: "Faixa vocal: analisar grava\xE7\xE3o" });
     let trail = null;
     trailButton.onclick = () => {
       if (trail) {
@@ -5185,10 +5458,14 @@ function showRegion(container, r, options) {
         trailButton.setText("Rastro 3D");
         return;
       }
+      for (const other of Array.from(document.querySelectorAll("audio"))) {
+        if (other !== player && !other.paused) other.pause();
+      }
+      if (player.paused) void player.play().catch(() => void 0);
       trail = mountDesktopSpectralTrail(player, row, () => {
         if (!options.analyzeAudio) throw new Error("Analisador espectral indispon\xEDvel.");
         return options.analyzeAudio(media.identifier);
-      });
+      }, { storageKey: "species:" + media.identifier, onFrequencyRange: (range) => frequency.setText("Faixa vocal estimada: " + range.minHz.toLocaleString() + "\u2013" + range.maxHz.toLocaleString() + " Hz") });
       trailButton.setText("Fechar 3D");
     };
   }
@@ -5204,7 +5481,7 @@ async function renderSpeciesMap(source, container, options = {}) {
     event.preventDefault();
     event.stopImmediatePropagation();
   });
-  let generation = 0, selectedBoundary = null, hoverGeneration = 0, hoverTimer = null;
+  let generation = 0, selectedBoundary = null, hoveredRegion = null, hoverGeneration = 0, hoverTimer = null;
   const update = async () => {
     const current = ++generation;
     drawBoundary(boundary, c, selectedBoundary);
@@ -5242,10 +5519,13 @@ async function renderSpeciesMap(source, container, options = {}) {
       const bounds = image.getBoundingClientRect(), u = (event.clientX - bounds.left) / bounds.width, v = (event.clientY - bounds.top) / bounds.height, point = mapCoordinate(c, u, v), request = ++hoverGeneration;
       if (hoverTimer !== null) window.clearTimeout(hoverTimer);
       hoverTimer = window.setTimeout(() => {
-        void loadBoundary(point.lat, point.lon).then((geometry) => {
-          if (request === hoverGeneration) drawBoundary(boundary, c, geometry ?? selectedBoundary);
+        void Promise.all([loadBoundary(point.lat, point.lon), isBrazilView(c) ? stateAt(point.lat, point.lon) : Promise.resolve(null)]).then(([geometry, state]) => {
+          if (request !== hoverGeneration) return;
+          hoveredRegion = geometry ? { u, v, name: String(state?.properties?.name || state?.properties?.nome || BRAZIL_STATE_NAMES[String(state?.properties?.codarea || "")] || ""), geometry } : null;
+          drawBoundary(boundary, c, geometry ?? selectedBoundary);
+          if (hoveredRegion?.name) status.setText(hoveredRegion.name + " \xB7 click to select");
         });
-      }, 140);
+      }, 90);
       return;
     }
     if (event.pointerId !== drag.id) return;
@@ -5270,7 +5550,8 @@ async function renderSpeciesMap(source, container, options = {}) {
       marker.style.left = (event.clientX - bounds.left) / bounds.width * 100 + "%";
       marker.style.top = (event.clientY - bounds.top) / bounds.height * 100 + "%";
       status.setText("Loading regional photos and sounds\u2026");
-      void loadRegion(c, (event.clientX - bounds.left) / bounds.width, (event.clientY - bounds.top) / bounds.height).then((r) => {
+      const clickU = (event.clientX - bounds.left) / bounds.width, clickV = (event.clientY - bounds.top) / bounds.height, selected = hoveredRegion;
+      void loadRegion(c, selected?.u ?? clickU, selected?.v ?? clickV, selected?.name || "").then((r) => {
         showRegion(container, r, options);
         void loadBoundary(r.lat, r.lon).then((geometry) => {
           selectedBoundary = geometry;
@@ -5287,6 +5568,7 @@ async function renderSpeciesMap(source, container, options = {}) {
   image.addEventListener("pointercancel", finish);
   image.addEventListener("pointerleave", () => {
     hoverGeneration++;
+    hoveredRegion = null;
     if (hoverTimer !== null) window.clearTimeout(hoverTimer);
     drawBoundary(boundary, c, selectedBoundary);
   });
@@ -5536,19 +5818,31 @@ var AudioSpectralRenderChild = class extends import_obsidian3.MarkdownRenderChil
     this.options = options;
   }
   observer = null;
+  scanFrame = 0;
   onload() {
-    const attach = () => this.attachPlayers();
-    attach();
-    this.observer = new MutationObserver(attach);
-    this.observer.observe(this.containerEl, { childList: true, subtree: true });
+    const schedule = () => {
+      if (this.scanFrame) return;
+      this.scanFrame = window.requestAnimationFrame(() => {
+        this.scanFrame = 0;
+        this.attachPlayers();
+      });
+    };
+    this.attachPlayers();
+    this.observer = new MutationObserver(schedule);
+    this.observer.observe(document.body, { childList: true, subtree: true });
   }
   onunload() {
     this.observer?.disconnect();
     this.observer = null;
+    if (this.scanFrame) window.cancelAnimationFrame(this.scanFrame);
+    this.scanFrame = 0;
   }
   attachPlayers() {
-    for (const audio of Array.from(this.containerEl.querySelectorAll("audio"))) {
+    const scope = this.containerEl.closest(".markdown-rendered, .markdown-preview-view") ?? this.containerEl;
+    for (const audio of Array.from(scope.querySelectorAll("audio,video"))) {
+      if (audio.closest(".markdown-source-view")) continue;
       if (audio.dataset.metaQuestSpectralAttached === "true") continue;
+      if (audio.parentElement === document.body && document.querySelector(".block-language-audio-player")) continue;
       if (audio.closest(".meta-quest-species-sound")) continue;
       const source = this.options.resolveSource(audio);
       if (!source) continue;
@@ -5570,9 +5864,108 @@ var AudioSpectralRenderChild = class extends import_obsidian3.MarkdownRenderChil
           button.textContent = "Rastro 3D";
           return;
         }
-        trail = mountDesktopSpectralTrail(audio, controls, () => this.options.analyzeAudio(source));
+        for (const other of Array.from(document.querySelectorAll("audio,video"))) {
+          if (other !== audio && !other.paused) other.pause();
+        }
+        if (audio.paused) void audio.play().catch(() => void 0);
+        trail = mountDesktopSpectralTrail(audio, controls, () => this.options.analyzeAudio(source), { storageKey: source });
         button.textContent = "Fechar rastro 3D";
       });
+    }
+    const audioPlayerBlocks = Array.from(document.querySelectorAll(".block-language-audio-player")).filter((block) => !block.closest(".markdown-source-view"));
+    const detachedPlayers = Array.from(document.querySelectorAll("body > audio, body audio"));
+    audioPlayerBlocks.forEach((block, index) => {
+      if (block.dataset.metaQuestSpectralAttached === "true") return;
+      const player = detachedPlayers[index] ?? detachedPlayers[0];
+      if (!player) return;
+      const source = this.options.resolveSource(player);
+      if (!source) return;
+      block.dataset.metaQuestSpectralAttached = "true";
+      player.dataset.metaQuestSpectralAttached = "true";
+      const controls = document.createElement("div"), button = document.createElement("button");
+      controls.className = "meta-quest-audio-spectral-controls";
+      button.type = "button";
+      button.className = "meta-quest-audio-spectral-button";
+      button.textContent = "Rastro 3D";
+      controls.append(button);
+      block.append(controls);
+      let trail = null;
+      button.onclick = () => {
+        if (trail) {
+          trail.remove();
+          trail = null;
+          button.textContent = "Rastro 3D";
+          return;
+        }
+        for (const other of Array.from(document.querySelectorAll("audio,video"))) if (other !== player && !other.paused) other.pause();
+        if (player.paused) void player.play().catch(() => void 0);
+        trail = mountDesktopSpectralTrail(player, controls, () => this.options.analyzeAudio(source), { storageKey: source });
+        button.textContent = "Fechar rastro 3D";
+      };
+    });
+    const frames = Array.from(scope.querySelectorAll("iframe")).filter((frame) => !frame.closest(".markdown-source-view") && /(?:releases\.obsidian\.md\/youtube|youtube\.com|youtu\.be)/iu.test(frame.src));
+    const visible = frames.find((frame) => frame.getClientRects().length > 0) ?? frames.at(-1);
+    for (const frame of frames) {
+      if (frame === visible) continue;
+      const sibling = frame.nextElementSibling;
+      if (sibling?.classList.contains("meta-quest-audio-spectral-controls")) sibling.remove();
+      delete frame.dataset.metaQuestSpectralAttached;
+    }
+    if (visible) {
+      const match = visible.src.match(/(?:releases\.obsidian\.md\/youtube\?v=|youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([\w-]+)/iu), id = decodeURIComponent(match?.[1] ?? ""), source = "https://www.youtube.com/watch?v=" + encodeURIComponent(id);
+      if (id && !(visible.dataset.metaQuestSpectralAttached === "true" && visible.nextElementSibling?.classList.contains("meta-quest-audio-spectral-controls"))) {
+        visible.dataset.metaQuestSpectralAttached = "true";
+        const controls = document.createElement("div"), button = document.createElement("button");
+        controls.className = "meta-quest-audio-spectral-controls";
+        button.type = "button";
+        button.className = "meta-quest-audio-spectral-button";
+        button.textContent = "Rastro 3D";
+        controls.append(button);
+        visible.insertAdjacentElement("afterend", controls);
+        let trail = null, dispose = null, analysis = null;
+        button.onclick = () => {
+          if (trail) {
+            trail.remove();
+            trail = null;
+            dispose?.();
+            dispose = null;
+            button.textContent = "Rastro 3D";
+            return;
+          }
+          const state = { currentTime: 0, duration: 0, paused: false, ended: false, addEventListener: () => void 0 };
+          const receive = (event) => {
+            if (event.source !== visible.contentWindow) return;
+            let message = event.data;
+            if (typeof message === "string") try {
+              message = JSON.parse(message);
+            } catch {
+              return;
+            }
+            const info = message?.info;
+            if (message?.event === "infoDelivery" && info) {
+              if (Number.isFinite(info.currentTime)) state.currentTime = Number(info.currentTime);
+              if (Number.isFinite(info.duration)) state.duration = Number(info.duration);
+              if (Number.isFinite(info.playerState)) {
+                state.paused = info.playerState !== 1;
+                state.ended = info.playerState === 0;
+              }
+            }
+          };
+          window.addEventListener("message", receive);
+          dispose = () => window.removeEventListener("message", receive);
+          const play = () => {
+            visible.contentWindow?.postMessage(JSON.stringify({ event: "listening", id: "meta-quest-spectral" }), "*");
+            visible.contentWindow?.postMessage(JSON.stringify({ event: "command", func: "playVideo", args: [] }), "*");
+          };
+          visible.allow = [visible.allow, "autoplay"].filter(Boolean).join("; ");
+          visible.addEventListener("load", play, { once: true });
+          visible.src = "https://www.youtube.com/embed/" + encodeURIComponent(id) + "?enablejsapi=1&autoplay=1&playsinline=1&rel=0";
+          window.setTimeout(play, 700);
+          analysis ??= this.options.analyzeAudio(source);
+          trail = mountDesktopSpectralTrail(state, controls, () => analysis, { storageKey: source });
+          button.textContent = "Fechar rastro 3D";
+        };
+      }
     }
   }
 };
@@ -5689,13 +6082,15 @@ var ObsidianArPlugin = class extends import_obsidian4.Plugin {
     });
     this.registerMarkdownCodeBlockProcessor("iucn", (source, element) => renderIucn(source, element));
     this.registerMarkdownCodeBlockProcessor("fasta", (source, element) => renderFasta(source, element));
-    this.registerMarkdownPostProcessor((element, context) => {
+    this.registerMarkdownPostProcessor((element) => {
       renderIucnStatus(element);
-      context.addChild(new AudioSpectralRenderChild(element, {
-        resolveSource: (audio) => this.resolveAudioSource(context.sourcePath, audio),
-        analyzeAudio: (source) => this.analyzeAudio(context.sourcePath, source)
-      }));
     });
+    const globalAudioSpectral = new AudioSpectralRenderChild(document.body, {
+      resolveSource: (media) => this.resolveAudioSource(this.app.workspace.getActiveFile()?.path ?? "", media),
+      analyzeAudio: (source) => this.analyzeAudio(this.app.workspace.getActiveFile()?.path ?? "", source)
+    });
+    globalAudioSpectral.onload();
+    this.register(() => globalAudioSpectral.onunload());
     this.addSettingTab(new ObsidianArSettingTab(this.app, this));
     this.registerEvent(this.app.vault.on("create", this.exportGraphDebounced));
     this.registerEvent(this.app.vault.on("delete", this.exportGraphDebounced));
@@ -5731,10 +6126,10 @@ var ObsidianArPlugin = class extends import_obsidian4.Plugin {
     this.sessionStatus = message;
     report?.(message);
   }
-  async startAr(report) {
+  async startAr(report, showPairing = true) {
     if (this.activeSession) {
-      this.showPairing();
-      this.setSessionStatus(tr("Sess\xE3o ativa. QR Code aberto novamente.", "Session active. QR code opened again."), report);
+      if (showPairing) this.showPairing();
+      this.setSessionStatus(showPairing ? tr("Sess\xE3o ativa. QR Code aberto novamente.", "Session active. QR code opened again.") : tr("Ponte existente reutilizada silenciosamente.", "Existing bridge reused silently."), report);
       return true;
     }
     if (this.startPromise) {
@@ -5758,9 +6153,9 @@ var ObsidianArPlugin = class extends import_obsidian4.Plugin {
           this.settings,
           (message) => this.setSessionStatus(message, report)
         );
-        this.showPairing();
-        this.setSessionStatus(tr("Sess\xE3o pronta para parear com o Quest.", "Session ready to pair with the Quest."), report);
-        new import_obsidian4.Notice(tr("Meta Quest Sync pronto para parear com o Quest.", "Meta Quest Sync is ready to pair with the Quest."));
+        if (showPairing) this.showPairing();
+        this.setSessionStatus(showPairing ? tr("Sess\xE3o pronta para parear com o Quest.", "Session ready to pair with the Quest.") : tr("Ponte de an\xE1lise iniciada em segundo plano.", "Analysis bridge started in the background."), report);
+        if (showPairing) new import_obsidian4.Notice(tr("Meta Quest Sync pronto para parear com o Quest.", "Meta Quest Sync is ready to pair with the Quest."));
         return true;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -5792,20 +6187,34 @@ var ObsidianArPlugin = class extends import_obsidian4.Plugin {
     return this.app.metadataCache.getFirstLinkpathDest(clean, notePath)?.path ?? clean.replace(/^\/+/, "");
   }
   async analyzeAudio(notePath, source) {
-    if (!this.activeSession && !await this.startAr()) throw new Error(tr("N\xE3o foi poss\xEDvel iniciar a ponte de an\xE1lise.", "Could not start the analysis bridge."));
+    if (!this.activeSession) this.activeSession = await this.sessionManager.attach(this.settings);
+    if (!this.activeSession) {
+      const accepted = window.confirm(tr("Nenhuma ponte de an\xE1lise est\xE1 ativa. Deseja inici\xE1-la agora em segundo plano?", "No analysis bridge is active. Start it now in the background?"));
+      if (!accepted) throw new Error(tr("A an\xE1lise foi cancelada porque a ponte n\xE3o est\xE1 ativa.", "Analysis was cancelled because the bridge is not active."));
+      if (!await this.startAr(void 0, false)) throw new Error(tr("N\xE3o foi poss\xEDvel iniciar a ponte de an\xE1lise.", "Could not start the analysis bridge."));
+    }
     const session = this.activeSession;
     if (!session) throw new Error(tr("A sess\xE3o de an\xE1lise n\xE3o est\xE1 ativa.", "The analysis session is not active."));
     const remote = /^https:\/\//iu.test(source);
-    const endpoint = remote ? "remote-spectral-analysis" : "spectral-analysis";
+    const remoteVideo = remote && (/(?:youtube\.com|youtu\.be|vimeo\.com|dailymotion\.com)/iu.test(source) || /\.(?:mp4|webm|mov|m4v)(?:[?#]|$)/iu.test(source));
+    const endpoint = remote ? remoteVideo ? "remote-spectral-analysis" : "remote-audio-ticket" : "spectral-analysis";
     const body = remote ? { notePath, url: source } : { notePath, assetPath: source };
     const response = await (0, import_obsidian4.requestUrl)({
-      url: `${session.url.replace(/\/+$/u, "")}/${endpoint}`,
+      url: `${session.localUrl.replace(/\/+$/u, "")}/${endpoint}`,
       method: "POST",
       headers: { Authorization: `Bearer ${session.token}`, "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
-    if (response.status < 200 || response.status >= 300) throw new Error(`Spectral analysis HTTP ${response.status}`);
-    return response.json;
+    if (response.status < 200 || response.status >= 300) {
+      const details = typeof response.text === "string" ? response.text.trim() : "";
+      throw new Error(details || `Spectral analysis HTTP ${response.status}`);
+    }
+    const result = response.json;
+    if (remote && !remoteVideo) {
+      if (!result?.spectral) throw new Error(tr("O \xE1udio remoto n\xE3o p\xF4de ser analisado.", "The remote audio could not be analyzed."));
+      return result.spectral;
+    }
+    return result;
   }
   async stopAr() {
     const root = this.settings.projectRoot.trim();
@@ -5825,7 +6234,8 @@ var ObsidianArPlugin = class extends import_obsidian4.Plugin {
       const url = createPairingUrl(
         this.settings.viewerUrl,
         this.activeSession.url,
-        this.activeSession.token
+        this.activeSession.token,
+        isPortuguese() ? "pt" : "en"
       );
       const modal = new PairingModal(this.app, url, this.activeSession);
       const settings = this.app.setting;

@@ -15,7 +15,7 @@ import {
 import { exportVaultGraph } from "./graph-exporter";
 import { createPairingUrl } from "./pairing";
 import { ActiveSession, SessionManager } from "./session-manager";
-import { setLanguagePreference, tr, type LanguagePreference } from "./i18n";
+import { isPortuguese, setLanguagePreference, tr, type LanguagePreference } from "./i18n";
 import { renderIucnStatus, renderSpeciesMap } from "./species-map";
 import { renderIucn } from "./iucn";
 import { renderFasta } from "./fasta";
@@ -157,13 +157,15 @@ export default class ObsidianArPlugin extends Plugin {
     });
     this.registerMarkdownCodeBlockProcessor("iucn", (source, element) => renderIucn(source, element));
     this.registerMarkdownCodeBlockProcessor("fasta", (source, element) => renderFasta(source, element));
-    this.registerMarkdownPostProcessor((element, context) => {
+    this.registerMarkdownPostProcessor((element) => {
       renderIucnStatus(element);
-      context.addChild(new AudioSpectralRenderChild(element, {
-        resolveSource: (audio) => this.resolveAudioSource(context.sourcePath, audio),
-        analyzeAudio: (source) => this.analyzeAudio(context.sourcePath, source)
-      }));
     });
+    const globalAudioSpectral = new AudioSpectralRenderChild(document.body, {
+      resolveSource: (media) => this.resolveAudioSource(this.app.workspace.getActiveFile()?.path ?? "", media),
+      analyzeAudio: (source) => this.analyzeAudio(this.app.workspace.getActiveFile()?.path ?? "", source)
+    });
+    globalAudioSpectral.onload();
+    this.register(() => globalAudioSpectral.onunload());
     this.addSettingTab(new ObsidianArSettingTab(this.app, this));
     this.registerEvent(this.app.vault.on("create", this.exportGraphDebounced));
     this.registerEvent(this.app.vault.on("delete", this.exportGraphDebounced));
@@ -203,10 +205,10 @@ export default class ObsidianArPlugin extends Plugin {
     report?.(message);
   }
 
-  async startAr(report?: (message: string) => void): Promise<boolean> {
+  async startAr(report?: (message: string) => void, showPairing = true): Promise<boolean> {
     if (this.activeSession) {
-      this.showPairing();
-      this.setSessionStatus(tr("Sessão ativa. QR Code aberto novamente.", "Session active. QR code opened again."), report);
+      if (showPairing) this.showPairing();
+      this.setSessionStatus(showPairing ? tr("Sessão ativa. QR Code aberto novamente.", "Session active. QR code opened again.") : tr("Ponte existente reutilizada silenciosamente.", "Existing bridge reused silently."), report);
       return true;
     }
     if (this.startPromise) {
@@ -230,9 +232,9 @@ export default class ObsidianArPlugin extends Plugin {
           this.settings,
           (message) => this.setSessionStatus(message, report)
         );
-        this.showPairing();
-        this.setSessionStatus(tr("Sessão pronta para parear com o Quest.", "Session ready to pair with the Quest."), report);
-        new Notice(tr("Meta Quest Sync pronto para parear com o Quest.", "Meta Quest Sync is ready to pair with the Quest."));
+        if (showPairing) this.showPairing();
+        this.setSessionStatus(showPairing ? tr("Sessão pronta para parear com o Quest.", "Session ready to pair with the Quest.") : tr("Ponte de análise iniciada em segundo plano.", "Analysis bridge started in the background."), report);
+        if (showPairing) new Notice(tr("Meta Quest Sync pronto para parear com o Quest.", "Meta Quest Sync is ready to pair with the Quest."));
         return true;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -247,7 +249,7 @@ export default class ObsidianArPlugin extends Plugin {
     return this.startPromise;
   }
 
-  private resolveAudioSource(notePath: string, audio: HTMLAudioElement): string | null {
+  private resolveAudioSource(notePath: string, audio: HTMLMediaElement): string | null {
     const embedded = audio.closest<HTMLElement>(".internal-embed")?.getAttribute("src")
       ?? audio.dataset.path ?? audio.getAttribute("data-path") ?? audio.getAttribute("src") ?? audio.currentSrc;
     if (!embedded) return null;
@@ -265,19 +267,33 @@ export default class ObsidianArPlugin extends Plugin {
   }
 
   private async analyzeAudio(notePath: string, source: string): Promise<unknown> {
-    if (!this.activeSession && !(await this.startAr())) throw new Error(tr("Não foi possível iniciar a ponte de análise.", "Could not start the analysis bridge."));
+    if (!this.activeSession) this.activeSession = await this.sessionManager.attach(this.settings);
+    if (!this.activeSession) {
+      const accepted = window.confirm(tr("Nenhuma ponte de análise está ativa. Deseja iniciá-la agora em segundo plano?", "No analysis bridge is active. Start it now in the background?"));
+      if (!accepted) throw new Error(tr("A análise foi cancelada porque a ponte não está ativa.", "Analysis was cancelled because the bridge is not active."));
+      if (!(await this.startAr(undefined, false))) throw new Error(tr("Não foi possível iniciar a ponte de análise.", "Could not start the analysis bridge."));
+    }
     const session = this.activeSession;
     if (!session) throw new Error(tr("A sessão de análise não está ativa.", "The analysis session is not active."));
     const remote = /^https:\/\//iu.test(source);
-    const endpoint = remote ? "remote-spectral-analysis" : "spectral-analysis";
+    const remoteVideo=remote&&(/(?:youtube\.com|youtu\.be|vimeo\.com|dailymotion\.com)/iu.test(source)||/\.(?:mp4|webm|mov|m4v)(?:[?#]|$)/iu.test(source));
+    const endpoint=remote?(remoteVideo?"remote-spectral-analysis":"remote-audio-ticket"):"spectral-analysis";
     const body = remote ? { notePath, url: source } : { notePath, assetPath: source };
     const response = await requestUrl({
-      url: `${session.url.replace(/\/+$/u, "")}/${endpoint}`, method: "POST",
+      url: `${session.localUrl.replace(/\/+$/u, "")}/${endpoint}`, method: "POST",
       headers: { Authorization: `Bearer ${session.token}`, "Content-Type": "application/json" },
       body: JSON.stringify(body)
     });
-    if (response.status < 200 || response.status >= 300) throw new Error(`Spectral analysis HTTP ${response.status}`);
-    return response.json;
+    if (response.status < 200 || response.status >= 300) {
+      const details = typeof response.text === "string" ? response.text.trim() : "";
+      throw new Error(details || `Spectral analysis HTTP ${response.status}`);
+    }
+    const result = response.json as { spectral?: unknown; method?: string };
+    if (remote && !remoteVideo) {
+      if (!result?.spectral) throw new Error(tr("O áudio remoto não pôde ser analisado.", "The remote audio could not be analyzed."));
+      return result.spectral;
+    }
+    return result;
   }
 
   async stopAr(): Promise<void> {
@@ -299,7 +315,8 @@ export default class ObsidianArPlugin extends Plugin {
       const url = createPairingUrl(
         this.settings.viewerUrl,
         this.activeSession.url,
-        this.activeSession.token
+        this.activeSession.token,
+        isPortuguese() ? "pt" : "en"
       );
       const modal = new PairingModal(this.app, url, this.activeSession);
       const settings = (this.app as App & {

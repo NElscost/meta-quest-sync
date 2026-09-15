@@ -14,6 +14,7 @@ export interface SessionSettings {
 
 export interface ActiveSession {
   url: string;
+  localUrl: string;
   token: string;
   serverPid: number;
   tunnelPid: number;
@@ -23,6 +24,7 @@ export type SessionStatusReporter = (message: string) => void;
 
 interface ProcessState {
   url: string;
+  port?: number;
   serverPid: number;
   tunnelPid: number;
 }
@@ -58,6 +60,7 @@ export class SessionManager {
     const configPath = path.join(settings.projectRoot, "note-bridge.config.json");
     const config = {
       vaultPath,
+      port: settings.port,
       tunnelMode: settings.tunnelMode,
       tunnelUrl: settings.tunnelUrl.trim().replace(/\/+$/u, ""),
       tunnelTokenFile: settings.tunnelTokenFile.trim() || ".cloudflare-tunnel-token"
@@ -65,10 +68,39 @@ export class SessionManager {
     await fs.writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
   }
 
+  async attach(settings: SessionSettings): Promise<ActiveSession | null> {
+    const statePath = path.join(settings.projectRoot, ".note-bridge-processes.json");
+    const tokenPath = path.join(settings.projectRoot, ".note-bridge-token");
+    if (!(await exists(statePath)) || !(await exists(tokenPath))) return null;
+    try {
+      const state = parseProcessState(await fs.readFile(statePath, "utf8"));
+      const token = (await fs.readFile(tokenPath, "utf8")).trim();
+      const port = Number.isInteger(state.port) ? state.port as number : settings.port;
+      if (port !== settings.port || token.length < 32) return null;
+      const localUrl = `http://127.0.0.1:${port}`;
+      const response = await fetch(`${localUrl}/verify`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(1800)
+      });
+      if (!response.ok) return null;
+      const verification = await response.json() as { capabilities?: string[] };
+      const capabilities = verification.capabilities ?? [];
+      if (!capabilities.includes("waveform") || !capabilities.includes("mfcc-pca")) return null;
+      return { ...state, url: state.url?.startsWith("https://") ? state.url : localUrl, localUrl, token };
+    } catch {
+      return null;
+    }
+  }
+
   async start(
     settings: SessionSettings,
     reportStatus: SessionStatusReporter = () => undefined
   ): Promise<ActiveSession> {
+    const attached = await this.attach(settings);
+    if (attached) {
+      reportStatus(tr("Ponte existente reutilizada na mesma porta.", "Existing bridge reused on the same port."));
+      return attached;
+    }
     const script = path.join(settings.projectRoot, "Scripts", "note-bridge.mjs");
     if (!(await exists(script))) throw new Error(tr(`${path.basename(script)} não foi encontrado.`, `${path.basename(script)} was not found.`));
     const statePath = path.join(settings.projectRoot, ".note-bridge-processes.json");
@@ -105,7 +137,7 @@ export class SessionManager {
             const token = (await fs.readFile(tokenPath, "utf8")).trim();
             if (state.url?.startsWith("https://") && token.length >= 32) {
               reportStatus(tr("Sessão pronta. Abrindo o QR Code…", "Session ready. Opening the QR code…"));
-              return { ...state, token };
+              return { ...state, localUrl: `http://127.0.0.1:${state.port ?? settings.port}`, token };
             }
           }
         } catch {

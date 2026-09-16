@@ -28,5 +28,11 @@ test("desktop species audio exposes an interactive persistent 3D identity trail"
   assert.match(main,/remote-audio-ticket/);
   assert.match(main,/assetPath: source/);
   assert.match(main,/\{ notePath, url: source \}/);
+  assert.match(trail,/const buildHubs=/);
+  assert.match(trail,/hubPoints=buildHubs/);
+  assert.match(trail,/members>1/);
+  assert.match(trail,/birthProgress/);
+  assert.match(trail,/popScale/);
+  assert.match(trail,/Math\.min\(1,Math\.max/);
   assert.match(trail,/Number\(data\.duration\)/);
 });

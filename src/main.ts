@@ -230,7 +230,8 @@ export default class ObsidianArPlugin extends Plugin {
         await this.sessionManager.configure(this.settings, this.vaultPath());
         this.activeSession = await this.sessionManager.start(
           this.settings,
-          (message) => this.setSessionStatus(message, report)
+          (message) => this.setSessionStatus(message, report),
+          !showPairing
         );
         if (showPairing) this.showPairing();
         this.setSessionStatus(showPairing ? tr("Sessão pronta para parear com o Quest.", "Session ready to pair with the Quest.") : tr("Ponte de análise iniciada em segundo plano.", "Analysis bridge started in the background."), report);

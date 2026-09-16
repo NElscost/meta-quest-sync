@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { requestUrl } from "obsidian";
 import { tr } from "./i18n";
 
 export interface SessionSettings {
@@ -78,12 +79,13 @@ export class SessionManager {
       const port = Number.isInteger(state.port) ? state.port as number : settings.port;
       if (port !== settings.port || token.length < 32) return null;
       const localUrl = `http://127.0.0.1:${port}`;
-      const response = await fetch(`${localUrl}/verify`, {
+      const response = await requestUrl({
+        url: `${localUrl}/verify`,
         headers: { Authorization: `Bearer ${token}` },
-        signal: AbortSignal.timeout(1800)
+        throw: false
       });
-      if (!response.ok) return null;
-      const verification = await response.json() as { capabilities?: string[] };
+      if (response.status < 200 || response.status >= 300) return null;
+      const verification = response.json as { capabilities?: string[] };
       const capabilities = verification.capabilities ?? [];
       if (!capabilities.includes("waveform") || !capabilities.includes("mfcc-pca")) return null;
       return { ...state, url: state.url?.startsWith("https://") ? state.url : localUrl, localUrl, token };
@@ -94,7 +96,8 @@ export class SessionManager {
 
   async start(
     settings: SessionSettings,
-    reportStatus: SessionStatusReporter = () => undefined
+    reportStatus: SessionStatusReporter = () => undefined,
+    localOnly = false
   ): Promise<ActiveSession> {
     const attached = await this.attach(settings);
     if (attached) {
@@ -108,9 +111,11 @@ export class SessionManager {
     const launchTime = Date.now();
     let diagnostics = "";
     let launchError: Error | null = null;
-    reportStatus(tr("Iniciando a ponte Axum e o túnel HTTPS…", "Starting the Axum bridge and HTTPS tunnel…"));
+    reportStatus(localOnly
+      ? tr("Iniciando a ponte local de análise…", "Starting the local analysis bridge…")
+      : tr("Iniciando a ponte Axum e o túnel HTTPS…", "Starting the Axum bridge and HTTPS tunnel…"));
     const command = settings.nodeExecutable?.trim() || "node";
-    const commandArgs = [script, "start", "--port", String(settings.port)];
+    const commandArgs = [script, "start", "--port", String(settings.port), ...(localOnly ? ["--local-only"] : [])];
     this.child = spawn(
       command,
       commandArgs,
@@ -135,9 +140,13 @@ export class SessionManager {
           if (metadata.mtimeMs >= launchTime - 1000) {
             const state = parseProcessState(await fs.readFile(statePath, "utf8"));
             const token = (await fs.readFile(tokenPath, "utf8")).trim();
-            if (state.url?.startsWith("https://") && token.length >= 32) {
-              reportStatus(tr("Sessão pronta. Abrindo o QR Code…", "Session ready. Opening the QR code…"));
-              return { ...state, localUrl: `http://127.0.0.1:${state.port ?? settings.port}`, token };
+            const localUrl = `http://127.0.0.1:${state.port ?? settings.port}`;
+            const urlReady = localOnly ? state.url === localUrl : state.url?.startsWith("https://");
+            if (urlReady && token.length >= 32) {
+              reportStatus(localOnly
+                ? tr("Ponte local de análise pronta.", "Local analysis bridge ready.")
+                : tr("Sessão pronta. Abrindo o QR Code…", "Session ready. Opening the QR code…"));
+              return { ...state, localUrl, token };
             }
           }
         } catch {

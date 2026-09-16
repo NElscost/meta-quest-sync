@@ -20,9 +20,13 @@ const context = await esbuild.context({
   logLevel: "info"
 });
 
+const engineOptions = {absWorkingDir: projectRoot, entryPoints: [path.join(projectRoot, "src", "spectral-scene.ts")], bundle: true, format: "cjs", target: "es2022", platform: "node", treeShaking: true, outfile: path.join(projectRoot, "spectral-engine.cjs"), logLevel: "info"};
 if (production) {
   await context.rebuild();
+  await esbuild.build(engineOptions);
   await context.dispose();
 } else {
   await context.watch();
+  const engineContext = await esbuild.context(engineOptions);
+  await engineContext.watch();
 }

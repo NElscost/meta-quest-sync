@@ -4841,6 +4841,16 @@ var SessionManager = class {
 var import_obsidian3 = require("obsidian");
 
 // src/desktop-spectral-trail.ts
+var spectralEngine = null;
+function loadSpectralEngine() {
+  if (spectralEngine) return spectralEngine;
+  const obsidianApp = globalThis.app, adapter = obsidianApp?.vault?.adapter, base = typeof adapter?.getBasePath === "function" ? adapter.getBasePath() : adapter?.basePath, config = obsidianApp?.vault?.configDir || ".obsidian";
+  if (!base) throw new Error("Diret\xF3rio do vault indispon\xEDvel para localizar o motor espectral.");
+  const enginePath = require("path").join(base, config, "plugins", "meta-quest-sync", "spectral-engine.cjs"), nodeRequire = require("module").createRequire(enginePath), resolved = nodeRequire.resolve(enginePath);
+  delete nodeRequire.cache[resolved];
+  spectralEngine = nodeRequire(resolved);
+  return spectralEngine;
+}
 function spectralFrequencyRange(value) {
   const raw = value?.points;
   if (!Array.isArray(raw)) return null;
@@ -4906,7 +4916,7 @@ function prepare(value) {
 }
 function mountDesktopSpectralTrail(audio, host, loadAnalysis, options = {}) {
   const shell = host.createDiv({ cls: "meta-quest-spectral-desktop" }), toolbar = shell.createDiv({ cls: "meta-quest-spectral-toolbar" }), title = toolbar.createSpan({ text: tr("Emiss\xF5es oscilat\xF3rias \xB7 60 FPS", "Oscillatory emissions \xB7 60 FPS") });
-  const mode = toolbar.createEl("button", { text: tr("Modo: emiss\xF5es", "Mode: emissions") }), rotate = toolbar.createEl("button", { text: tr("Rota\xE7\xE3o: desligada", "Rotation: off") }), shape = toolbar.createEl("button", { text: tr("Forma: linhas", "Shape: lines") }), zoomOut = toolbar.createEl("button", { text: "Zoom \u2212", attr: { "aria-label": "Reduzir zoom" } }), zoomIn = toolbar.createEl("button", { text: "Zoom +", attr: { "aria-label": "Aumentar zoom" } }), reset = toolbar.createEl("button", { text: tr("Redefinir c\xE2mera", "Reset camera") }), status = toolbar.createSpan({ text: tr("Analisando \xE1udio\u2026", "Analyzing audio\u2026") });
+  const mode = toolbar.createEl("button", { text: tr("Modo: emiss\xF5es", "Mode: emissions") }), rotate = toolbar.createEl("button", { text: tr("Rota\xE7\xE3o: desligada", "Rotation: off") }), shape = toolbar.createEl("button", { text: tr("Forma: ret\xE2ngulos + labels", "Shape: rectangles + labels") }), zoomOut = toolbar.createEl("button", { text: "Zoom \u2212", attr: { "aria-label": "Reduzir zoom" } }), zoomIn = toolbar.createEl("button", { text: "Zoom +", attr: { "aria-label": "Aumentar zoom" } }), reset = toolbar.createEl("button", { text: tr("Redefinir c\xE2mera", "Reset camera") }), status = toolbar.createSpan({ text: tr("Analisando \xE1udio\u2026", "Analyzing audio\u2026") });
   const savedKey = options.storageKey ? `meta-quest-spectral-frequency:${options.storageKey}` : "meta-quest-spectral-frequency:default";
   let saved = {};
   try {
@@ -4929,12 +4939,41 @@ function mountDesktopSpectralTrail(audio, host, loadAnalysis, options = {}) {
   const canvas = shell.createEl("canvas", { cls: "meta-quest-spectral-canvas", attr: { width: "960", height: "480", "aria-label": "Identidade espectral tridimensional h\xEDbrida; use a roda do mouse para zoom" } }), ctx = canvas.getContext("2d");
   const dashboard = shell.createDiv({ cls: "meta-quest-spectral-dashboard" });
   const panelTitles = [tr("Descritores Hz", "Hz descriptors"), tr("Din\xE2mica dB", "dB dynamics"), tr("Mapa tonal", "Tone map"), tr("Janela temporal", "Time window"), tr("Proje\xE7\xE3o cepstral", "Cepstral projection"), tr("Perfil crom\xE1tico derivado", "Derived chroma profile")];
+  const glCanvas = document.createElement("canvas");
+  glCanvas.className = canvas.className;
+  glCanvas.width = 960;
+  glCanvas.height = 480;
+  glCanvas.style.display = "none";
+  const glViewport = document.createElement("div");
+  glViewport.style.position = "relative";
+  glViewport.style.width = "100%";
+  canvas.insertAdjacentElement("beforebegin", glViewport);
+  glViewport.append(glCanvas, canvas);
+  const labelCanvas = document.createElement("canvas");
+  labelCanvas.width = 960;
+  labelCanvas.height = 480;
+  labelCanvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none";
+  glViewport.append(labelCanvas);
   const panelCanvases = panelTitles.map((title2) => {
     const panel = dashboard.createDiv({ cls: "meta-quest-spectral-panel" });
     panel.createDiv({ cls: "meta-quest-spectral-panel-title", text: title2 });
     return panel.createEl("canvas", { attr: { width: "420", height: "150" } });
   });
-  let points = [], filteredPoints = [], hubPoints = [], filterSignature = "", duration = 0, yaw = -0.55, pitch = 0.28, zoom = 1, auto = false, rectangles = false, emissions = true, drag = null, frame = 0, panelFrame = 0, rafTick = 0, renderEvery = 1, disposed = false;
+  let points = [], filteredPoints = [], hubPoints = [], filterSignature = "", duration = 0, yaw = -0.55, pitch = 0.28, zoom = 1, auto = false, rectangles = true, emissions = true, drag = null, frame = 0, panelFrame = 0, rafTick = 0, renderEvery = 1, disposed = false, scene3d = null, glVisible = true;
+  const visibility = new IntersectionObserver((entries) => {
+    glVisible = entries.some((entry) => entry.isIntersecting);
+  });
+  visibility.observe(glCanvas);
+  const resize = new ResizeObserver(() => {
+    if (scene3d) scene3d.resize(glCanvas.clientWidth || 960, glCanvas.clientHeight || 480);
+  });
+  resize.observe(glCanvas);
+  const release3d = () => {
+    visibility.disconnect();
+    resize.disconnect();
+    scene3d?.dispose();
+    scene3d = null;
+  };
   const project = (p) => {
     const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch), x = p.x * cy - p.z * sy, z = p.x * sy + p.z * cy, y = p.y * cp - z * sp, depth = p.y * sp + z * cp + 3.2, scale = 310 * zoom / depth;
     return { x: canvas.width / 2 + x * scale, y: canvas.height * 0.55 - y * scale, visible: depth > 0.2 };
@@ -5146,6 +5185,41 @@ function mountDesktopSpectralTrail(audio, host, loadAnalysis, options = {}) {
       frame = requestAnimationFrame(render);
       return;
     }
+    if (scene3d && emissions) {
+      const complete = audio.ended || duration > 0 && audio.currentTime >= duration - 0.08 && audio.paused, size = Math.max(0.25, Number(windowSeconds.value) || 3.25), low2 = Math.max(0, Number(minHz.value) || 0), high2 = Math.max(low2, Number(maxHz.value) || 18e3), threshold2 = Math.max(0, Number(minIntensity.value) || 0) / 100, end2 = complete ? duration : audio.currentTime;
+      scene3d.setTime(end2, complete);
+      scene3d.setFilters(low2, high2, threshold2, size);
+      if (glVisible) {
+        scene3d.render();
+        const labels = scene3d.labels(rectangles ? Math.max(4, Math.round(Number(labelDensity.value) || 18)) : 0), lx = labelCanvas.getContext("2d");
+        if (lx) {
+          const w = glCanvas.clientWidth || 960, h = glCanvas.clientHeight || 480;
+          if (labelCanvas.width !== w || labelCanvas.height !== h) {
+            labelCanvas.width = w;
+            labelCanvas.height = h;
+          }
+          lx.clearRect(0, 0, w, h);
+          lx.font = "8px system-ui";
+          lx.textBaseline = "middle";
+          for (const item of labels) {
+            const born = item.age < 0.55;
+            lx.fillStyle = born ? "rgba(255,255,255,.94)" : "rgba(238,245,255,.84)";
+            lx.shadowColor = born ? "rgba(255,255,255,.28)" : item.color;
+            lx.shadowBlur = born ? 4 : 2;
+            lx.fillText(item.amplitude.toFixed(4), item.x + 7, item.y - 8);
+            lx.fillText(item.age.toFixed(2), item.x - 18, item.y + 1);
+            lx.fillText(item.time.toFixed(2), item.x + 7, item.y + 9);
+          }
+          lx.shadowBlur = 0;
+        }
+      }
+      if ((panelFrame++ & 3) === 0) {
+        const eligible2 = eligiblePoints(low2, high2, threshold2);
+        renderPanels(eligible2.slice(lowerTime(eligible2, complete ? 0 : Math.max(0, end2 - size)), upperTime(eligible2, end2)));
+      }
+      frame = requestAnimationFrame(render);
+      return;
+    }
     ctx.fillStyle = "#050b13";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     grid();
@@ -5212,15 +5286,22 @@ function mountDesktopSpectralTrail(audio, host, loadAnalysis, options = {}) {
     frame = requestAnimationFrame(render);
   }
   const setZoom = (value) => {
+    const previous = zoom;
     zoom = Math.max(0.45, Math.min(3.5, value));
+    scene3d?.zoomBy(previous / zoom);
   };
   mode.onclick = () => {
     emissions = !emissions;
+    if (scene3d) {
+      glCanvas.style.display = emissions ? "" : "none";
+      canvas.style.display = emissions ? "none" : "";
+    }
     mode.setText(emissions ? tr("Modo: emiss\xF5es", "Mode: emissions") : tr("Modo: PCA", "Mode: PCA"));
     title.setText(emissions ? tr("Emiss\xF5es oscilat\xF3rias \xB7 60 FPS", "Oscillatory emissions \xB7 60 FPS") : tr("Identidade espectral 3D \xB7 PCA h\xEDbrida", "3D spectral identity \xB7 hybrid PCA"));
   };
   rotate.onclick = () => {
     auto = !auto;
+    scene3d?.setOrbit(auto);
     rotate.setText(auto ? tr("Rota\xE7\xE3o: ligada", "Rotation: on") : tr("Rota\xE7\xE3o: desligada", "Rotation: off"));
   };
   shape.onclick = () => {
@@ -5233,6 +5314,7 @@ function mountDesktopSpectralTrail(audio, host, loadAnalysis, options = {}) {
     yaw = -0.55;
     pitch = 0.28;
     zoom = 1;
+    scene3d?.resetCamera();
   };
   canvas.addEventListener("wheel", (e) => {
     e.preventDefault();
@@ -5249,6 +5331,22 @@ function mountDesktopSpectralTrail(audio, host, loadAnalysis, options = {}) {
   });
   canvas.addEventListener("pointerup", () => drag = null);
   canvas.addEventListener("pointercancel", () => drag = null);
+  let glDrag = null;
+  glCanvas.addEventListener("pointerdown", (e) => {
+    glDrag = { x: e.clientX, y: e.clientY };
+    glCanvas.setPointerCapture(e.pointerId);
+  });
+  glCanvas.addEventListener("pointermove", (e) => {
+    if (!glDrag) return;
+    scene3d?.orbitBy((e.clientX - glDrag.x) * 8e-3, (e.clientY - glDrag.y) * 8e-3);
+    glDrag = { x: e.clientX, y: e.clientY };
+  });
+  glCanvas.addEventListener("pointerup", () => glDrag = null);
+  glCanvas.addEventListener("pointercancel", () => glDrag = null);
+  glCanvas.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    scene3d?.zoomBy(Math.exp(e.deltaY * 12e-4));
+  }, { passive: false });
   const restart = () => {
   };
   audio.addEventListener("seeked", restart);
@@ -5257,12 +5355,33 @@ function mountDesktopSpectralTrail(audio, host, loadAnalysis, options = {}) {
     if (document.contains(shell)) return;
     disposed = true;
     cancelAnimationFrame(frame);
+    release3d();
     observer.disconnect();
   });
   observer.observe(document.body, { childList: true, subtree: true });
   void Promise.resolve().then(loadAnalysis).then((value) => {
     ({ points, duration } = prepare(value));
     filterSignature = "";
+    void Promise.resolve().then(() => {
+      const engine = loadSpectralEngine();
+      if (disposed) return;
+      const result = engine.createSpectralScene(glCanvas, points);
+      if (disposed) {
+        result.dispose();
+        return;
+      }
+      scene3d = result;
+      scene3d.resize(glCanvas.clientWidth || 960, glCanvas.clientHeight || 480);
+      scene3d.setOrbit(auto);
+      canvas.style.display = "none";
+      glCanvas.style.display = "";
+    }).catch((error) => {
+      console.error("[meta-quest-sync] Three.js spectral engine failed", error);
+      status.setText(`WebGL indispon\xEDvel \xB7 fallback 2D: ${error instanceof Error ? error.message : String(error)}`);
+      glCanvas.style.display = "none";
+      labelCanvas.style.display = "none";
+      canvas.style.display = "";
+    });
     filteredPoints = [];
     hubPoints = [];
     const range = spectralFrequencyRange(value);

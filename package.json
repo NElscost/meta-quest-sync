@@ -11,11 +11,13 @@
         "test": "node --test tests/*.test.mjs"
     },
     "dependencies": {
-        "qrcode": "1.5.4"
+        "qrcode": "1.5.4",
+        "three": "^0.180.0"
     },
     "devDependencies": {
         "@types/node": "22.19.19",
         "@types/qrcode": "1.5.6",
+        "@types/three": "^0.180.0",
         "builtin-modules": "3.3.0",
         "esbuild": "0.25.12",
         "obsidian": "latest",

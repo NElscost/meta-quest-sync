@@ -69,37 +69,6 @@ the session token and only accepts compatible HTTPS origins.
 
 The settings page follows the Obsidian/system language when Portuguese is detected and uses English for other languages. Select **Interface language → English** to force English.
 
-## Privacy and network access
-
-Meta Quest Sync reads note paths and links through the Obsidian API to generate
-the graph. It starts local `cargo`, bridge and `cloudflared` processes through
-the companion project. The bridge exposes requested note content and media to
-the paired Quest through an HTTPS Cloudflare Tunnel.
-
-Anyone holding both the temporary bridge URL and session token can access the
-allowed endpoints while the session is active. Keep them private and stop the
-session when finished. The plugin has no telemetry, advertising, payment flow
-or account system.
-
-See the [main project documentation](https://github.com/NElscost/Obsidian-Ar)
-for tunnel configuration, platform notes, WebXR gestures, troubleshooting and
-the optional glTF pipeline.
-
-## Development
-
-```sh
-npm ci
-npm test
-npm run build
-```
-
-The GitHub release tag must exactly match `manifest.json` and include
-`main.js`, `manifest.json` and `styles.css`.
-
-## License
-
-[MIT](LICENSE)
-
 ## Biological visualization blocks
 
 Use fenced Markdown blocks in a note.
@@ -115,7 +84,7 @@ zoom: 2
 style: classic.point
 ```
 
-Select a map region to see its inferred name, occurrence count, photos and recordings. Dragging pans the desktop map.
+Select a map region to see its inferred name, occurrence count, photos and recordings. Regional recordings can generate an interactive **3D sound trail**, inspired by Lucio Arese's [Seeing Birdsong](https://www.lucioarese.net/seeing-birdsong/) project. Dragging pans the desktop map.
 
 ### IUCN status
 
@@ -138,4 +107,44 @@ ATGAACGAAAATCTATACAAAAGCCTAACATTC
 ATGAACGAAAATCTATACAAAAGCCTAACATTC
 ```
 
+![FASTA alignment preview](assets/fasta-alignment-preview.png)
+
 The desktop plugin renders a color-coded, scrollable alignment. Use **Alignment**, **UPGMA tree**, and **Distances** to switch between the sequence grid, a lightweight phylogenetic tree inferred with p-distance, and a distance matrix. Tree inference is on demand and bounded to 64 taxa and 5,000 informative sites; this is intended for exploration and does not replace a reproducible MEGA analysis with an explicit substitution model and bootstrap settings. WebXR first creates a compact raster preview; selecting it opens the paged spatial comparison view. Up to 128 sequences and 500,000 input characters are parsed, with desktop display limited to 10,000 residues per sequence to protect responsiveness.
+
+
+## Privacy and network access
+
+Meta Quest Sync reads note paths and links through the Obsidian API to generate
+the graph. It starts local `cargo`, bridge and `cloudflared` processes through
+the companion project. The bridge exposes requested note content and media to
+the paired Quest through an HTTPS Cloudflare Tunnel.
+
+Anyone holding both the temporary bridge URL and session token can access the
+allowed endpoints while the session is active. Keep them private and stop the
+session when finished. The plugin has no telemetry, advertising, payment flow
+or account system.
+
+### Security safeguards
+
+The plugin launches the fixed `Scripts/note-bridge.mjs` companion entry point directly with Node.js, without a command shell. A custom Node.js setting must point to a real `node` or `node.exe` executable. Bridge diagnostics redact tokens and vault paths, session credentials are not stored in plugin settings, and the bridge is started only by an explicit command. Stopping the session terminates the managed bridge and tunnel processes.
+
+These capabilities require filesystem, local-process and network access and may therefore be classified as **Risks** by automated or community review. The classification describes the plugin's privileged feature set; it is not eliminated by hiding the permissions. Review the companion project before use and prefer local-only analysis when a public WebXR session is unnecessary.
+
+See the [main project documentation](https://github.com/NElscost/Obsidian-Ar)
+for tunnel configuration, platform notes, WebXR gestures, troubleshooting and
+the optional glTF pipeline.
+
+## Development
+
+```sh
+npm ci
+npm test
+npm run build
+```
+
+The GitHub release tag must exactly match `manifest.json` and include
+`main.js`, `manifest.json` and `styles.css`.
+
+## License
+
+[MIT](LICENSE)

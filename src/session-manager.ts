@@ -38,9 +38,28 @@ function safeDiagnostics(contents: string): string {
   return contents
     .replace(/^Token:\s*[^\r\n]+/gimu, "Token: [oculto]")
     .replace(/^Vault:\s*[^\r\n]+/gimu, "Vault: [oculto]")
+    .replace(/(authorization:\s*bearer\s+)[^\s]+/gimu, "$1[oculto]")
+    .replace(/([?&](?:token|access_token)=)[^&#\s]+/gimu, "$1[oculto]")
+    .replace(/(#obsidian-ar=)[^\s]+/gimu, "$1[oculto]")
     .trim();
 }
 
+function bridgeScript(projectRoot: string): string {
+  const root = path.resolve(projectRoot);
+  const script = path.resolve(root, "Scripts", "note-bridge.mjs");
+  const expectedParent = path.resolve(root, "Scripts") + path.sep;
+  if (!script.startsWith(expectedParent)) throw new Error(tr("Caminho da ponte inválido.", "Invalid bridge path."));
+  return script;
+}
+
+function nodeCommand(value?: string): string {
+  const command = value?.trim() || "node";
+  if (command === "node") return command;
+  if (!path.isAbsolute(command) || !/^node(?:\.exe)?$/iu.test(path.basename(command))) {
+    throw new Error(tr("Selecione somente o executável node ou node.exe.", "Select only the node or node.exe executable."));
+  }
+  return command;
+}
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
@@ -104,7 +123,7 @@ export class SessionManager {
       reportStatus(tr("Ponte existente reutilizada na mesma porta.", "Existing bridge reused on the same port."));
       return attached;
     }
-    const script = path.join(settings.projectRoot, "Scripts", "note-bridge.mjs");
+    const script = bridgeScript(settings.projectRoot);
     if (!(await exists(script))) throw new Error(tr(`${path.basename(script)} não foi encontrado.`, `${path.basename(script)} was not found.`));
     const statePath = path.join(settings.projectRoot, ".note-bridge-processes.json");
     const tokenPath = path.join(settings.projectRoot, ".note-bridge-token");
@@ -114,12 +133,12 @@ export class SessionManager {
     reportStatus(localOnly
       ? tr("Iniciando a ponte local de análise…", "Starting the local analysis bridge…")
       : tr("Iniciando a ponte Axum e o túnel HTTPS…", "Starting the Axum bridge and HTTPS tunnel…"));
-    const command = settings.nodeExecutable?.trim() || "node";
+    const command = nodeCommand(settings.nodeExecutable);
     const commandArgs = [script, "start", "--port", String(settings.port), ...(localOnly ? ["--local-only"] : [])];
     this.child = spawn(
       command,
       commandArgs,
-      { cwd: settings.projectRoot, windowsHide: true }
+      { cwd: path.resolve(settings.projectRoot), windowsHide: true, shell: false, stdio: ["ignore", "pipe", "pipe"] }
     );
     this.child.stdout?.on("data", (chunk: Buffer) => {
       diagnostics = `${diagnostics}${chunk.toString("utf8")}`.slice(-6000);
@@ -171,15 +190,15 @@ export class SessionManager {
 
   async stop(settings: SessionSettings): Promise<void> {
     const projectRoot = settings.projectRoot;
-    const script = path.join(projectRoot, "Scripts", "note-bridge.mjs");
+    const script = bridgeScript(projectRoot);
     if (!(await exists(script))) throw new Error(tr(`${path.basename(script)} não foi encontrado.`, `${path.basename(script)} was not found.`));
     await new Promise<void>((resolve, reject) => {
-      const command = settings.nodeExecutable?.trim() || "node";
+      const command = nodeCommand(settings.nodeExecutable);
       const commandArgs = [script, "stop"];
       const child = spawn(
         command,
         commandArgs,
-        { cwd: projectRoot, windowsHide: true }
+        { cwd: path.resolve(projectRoot), windowsHide: true, shell: false, stdio: ["ignore", "pipe", "pipe"] }
       );
       let errorText = "";
       child.stderr?.on("data", (chunk: Buffer) => {

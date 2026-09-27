@@ -27,7 +27,10 @@ test("inicia a ponte no Windows, Linux e macOS", async () => {
   const session = await readFile(sessionUrl, "utf8");
   assert.match(session, /note-bridge\.mjs/);
   assert.match(session, /\[script, "start", "--port"/);
-  assert.match(session, /settings\.nodeExecutable\?\.trim\(\) \|\| "node"/);
+  assert.match(session, /nodeCommand\(settings\.nodeExecutable\)/);
+  assert.match(session, /shell: false/);
+  assert.match(session, /path\.basename\(command\)/);
+  assert.match(session, /authorization:/i);
   assert.doesNotMatch(session, /powershell\.exe/i);
   assert.doesNotMatch(session, /automatiza a ponte no Windows/);
 });

@@ -10,6 +10,7 @@ test("registers explicit IUCN and FASTA blocks", async () => {
   assert.match(main, /registerMarkdownCodeBlockProcessor\("fasta"/);
   assert.match(iucn, /IUCN 3\.1/);
   assert.match(iucn, /CATEGORIES\.includes/);
+  assert.match(iucn, /tr\("Extinta","Extinct"\)/);
   assert.match(fasta, /parseFasta/);
   assert.match(fasta, /inline\.unshift/);
   assert.match(fasta, /10_000/);
@@ -17,4 +18,11 @@ test("registers explicit IUCN and FASTA blocks", async () => {
   assert.match(fasta, /pDistance/);
   assert.match(fasta, /UPGMA tree/);
   assert.match(fasta, /Distances/);
+});
+
+test("localizes the IUCN scale embedded in species notes", async () => {
+  const speciesMap = await readFile(new URL("../src/species-map.ts", import.meta.url), "utf8");
+  assert.match(speciesMap, /tr\("Pouco Preocupante","Least Concern"\)/);
+  assert.match(speciesMap, /tr\("Ameaçada","Threatened"\)/);
+  assert.doesNotMatch(speciesMap, /labels\.innerHTML/);
 });

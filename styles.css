@@ -36,8 +36,8 @@
 .meta-quest-species-map-toolbar { display:flex; align-items:center; gap:.45rem; min-height:2.3rem; padding:.35rem .55rem; color:#c8d7e8; background:#091725; }
 .meta-quest-species-map-toolbar span { flex:1; }
 .meta-quest-species-map-toolbar button { width:2rem; height:2rem; padding:0; }
-.meta-quest-species-map-viewport { position:relative; overflow:hidden; transform-origin:center; background:radial-gradient(circle at 50% 45%,rgba(43,87,62,.22),rgba(3,8,16,.96) 72%); }
-.meta-quest-species-map-image { display:block; width:100%; height:auto; aspect-ratio:3/2; object-fit:contain; }
+.meta-quest-species-map-viewport { position:relative; overflow:hidden; transform-origin:center; will-change:transform; contain:layout paint style; backface-visibility:hidden; background:radial-gradient(circle at 50% 45%,rgba(43,87,62,.22),rgba(3,8,16,.96) 72%); }
+.meta-quest-species-map-image { display:block; will-change:transform; transform:translateZ(0); width:100%; height:auto; aspect-ratio:3/2; object-fit:contain; }
 .meta-quest-species-boundary { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:2; }
 
 .meta-quest-species-region{padding:12px;display:grid;gap:10px;background:var(--background-secondary)}.meta-quest-species-gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}.meta-quest-species-gallery img{width:100%;height:120px;object-fit:cover;border-radius:8px}.meta-quest-species-sound{display:grid;grid-template-columns:minmax(120px,1fr) 2fr;gap:8px;align-items:center}.meta-quest-species-sound audio{width:100%}
@@ -73,3 +73,30 @@
 .meta-quest-spectral-panel-title{padding:.3rem .45rem;color:#adbed2;font-size:.68rem;font-style:italic;text-transform:uppercase;letter-spacing:.06em}
 .meta-quest-spectral-panel canvas{display:block;width:100%;height:auto;aspect-ratio:2.8/1}
 @media(max-width:850px){.meta-quest-spectral-dashboard{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.meta-quest-species-dashboard{display:grid;grid-template-columns:minmax(220px,.8fr) minmax(260px,1.2fr);gap:10px;padding:10px;border:1px solid rgba(117,167,255,.22);border-radius:10px;background:#071421;color:#dceafa}.meta-quest-species-range{display:grid;gap:5px}.meta-quest-species-range small{color:#94a9c0;line-height:1.35}.meta-quest-species-empirical{color:#73e6ce;font-weight:700}.meta-quest-species-municipalities{min-width:0}.meta-quest-species-chips{display:flex;gap:6px;overflow:auto;padding:7px 0}.meta-quest-species-chips button{flex:0 0 auto;padding:5px 8px;font-size:.72rem}.meta-quest-species-chips button.is-active{background:#167c68;color:#fff}.meta-quest-species-media{display:grid;gap:10px}@media(max-width:760px){.meta-quest-species-dashboard{grid-template-columns:1fr}}
+
+/* Compact, vertical municipality dashboard shared with the XR layout. */
+.meta-quest-species-map{width:min(100%,1040px);font-size:.79rem}
+.meta-quest-species-region{padding:10px 12px;font-size:.78rem}
+.meta-quest-species-dashboard{grid-template-columns:minmax(220px,.8fr) minmax(220px,1fr);font-size:.77rem;line-height:1.35}
+.meta-quest-species-range{gap:3px}
+.meta-quest-species-municipalities{display:flex;flex-direction:column;gap:5px}
+.meta-quest-species-chips{display:flex;flex-direction:column;align-items:stretch;gap:3px;max-height:215px;overflow:auto;padding:3px 4px 3px 0;scrollbar-width:thin}
+.meta-quest-species-chips button{flex:none;width:100%;min-height:28px;padding:4px 8px;text-align:left;font-size:.72rem;line-height:1.2;white-space:normal}
+.meta-quest-species-chips button:hover{background:#153d4a;color:#fff}
+.meta-quest-species-media,.meta-quest-species-sound{font-size:.76rem}
+@media(max-width:600px){.meta-quest-species-dashboard{grid-template-columns:1fr}.meta-quest-species-chips{max-height:160px}}
+
+.meta-quest-species-vector-host{position:relative;width:100%;height:auto;aspect-ratio:3/2;overflow:hidden;background:#07111d;contain:layout paint style}
+.meta-quest-species-vector-host .maplibregl-map,.meta-quest-species-vector-host .maplibregl-canvas-container{position:absolute;inset:0;width:100%;height:100%;overflow:hidden}
+.meta-quest-species-vector-host .maplibregl-canvas{position:absolute;left:0;top:0;outline:none;cursor:grab}
+.meta-quest-species-vector-host .maplibregl-canvas:active{cursor:grabbing}
+.meta-quest-species-map-vector .meta-quest-species-map-toolbar{position:relative;z-index:5}
+
+.meta-quest-species-vector-host.leaflet-container{position:relative;overflow:hidden;background:#07111d;outline:0;touch-action:none}
+.meta-quest-species-vector-host .leaflet-pane,.meta-quest-species-vector-host .leaflet-tile,.meta-quest-species-vector-host .leaflet-marker-icon,.meta-quest-species-vector-host .leaflet-marker-shadow,.meta-quest-species-vector-host .leaflet-tile-container,.meta-quest-species-vector-host .leaflet-pane>svg,.meta-quest-species-vector-host .leaflet-pane>canvas{position:absolute;left:0;top:0}
+.meta-quest-species-vector-host .leaflet-map-pane{z-index:2}.meta-quest-species-vector-host .leaflet-tile-pane{z-index:200}.meta-quest-species-vector-host .leaflet-overlay-pane{z-index:400}.meta-quest-species-vector-host .leaflet-shadow-pane{z-index:500}.meta-quest-species-vector-host .leaflet-marker-pane{z-index:600}.meta-quest-species-vector-host .leaflet-tooltip-pane{z-index:650}.meta-quest-species-vector-host .leaflet-popup-pane{z-index:700}
+.meta-quest-species-vector-host .leaflet-tile{visibility:hidden;filter:brightness(.48) saturate(.72) hue-rotate(168deg)}.meta-quest-species-vector-host .leaflet-tile-loaded{visibility:inherit}.meta-quest-species-vector-host .leaflet-zoom-animated{transform-origin:0 0}.meta-quest-species-vector-host .leaflet-zoom-hide{visibility:hidden}
+.meta-quest-species-vector-host .leaflet-tooltip{position:absolute;padding:0;border:0;background:transparent;box-shadow:none;pointer-events:none;white-space:nowrap}.meta-quest-species-vector-host .meta-quest-species-count{color:#07111d;font:800 10px system-ui;transform:translate(-50%,-50%)}
+.meta-quest-species-attribution{padding:.22rem .5rem;text-align:right;color:#8799aa;background:#07111d;font-size:.64rem}

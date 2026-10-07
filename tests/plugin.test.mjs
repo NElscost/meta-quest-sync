@@ -23,16 +23,12 @@ test("oferece comandos, ribbon e pareamento sem persistir o token", async () => 
   assert.doesNotMatch(main, /settings\.token/);
 });
 
-test("inicia a ponte no Windows, Linux e macOS", async () => {
+test("conecta somente a uma ponte externa já ativa", async () => {
   const session = await readFile(sessionUrl, "utf8");
-  assert.match(session, /note-bridge\.mjs/);
-  assert.match(session, /\[script, "start", "--port"/);
-  assert.match(session, /nodeCommand\(settings\.nodeExecutable\)/);
-  assert.match(session, /shell: false/);
-  assert.match(session, /path\.basename\(command\)/);
-  assert.match(session, /authorization:/i);
-  assert.doesNotMatch(session, /powershell\.exe/i);
-  assert.doesNotMatch(session, /automatiza a ponte no Windows/);
+  assert.match(session, /async connect\(settings: SessionSettings\)/);
+  assert.match(session, /http:\/\/127\.0\.0\.1:\$\{port\}/);
+  assert.match(session, /\/verify/);
+  assert.doesNotMatch(session, /child_process|spawn\(|exec\(|note-bridge\.mjs|nodeExecutable/);
 });
 
 test("gera o grafo pela API do Obsidian e respeita exclusões", async () => {
@@ -60,6 +56,6 @@ test("usa português do sistema e inglês como fallback", async () => {
   assert.match(main, /\.addOption\("system", tr\("Idioma do sistema", "System language"\)\)/);
   assert.match(main, /\.addOption\("en", "English"\)/);
   assert.match(main, /tr\("Pasta do projeto", "Project folder"\)/);
-  assert.match(session, /tr\("Iniciando a ponte Axum/);
+  assert.match(session, /"The bridge is not running\. Start it from the companion project/);
   assert.match(pairing, /"The viewer must use HTTPS\."/);
 });

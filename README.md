@@ -2,7 +2,7 @@
 
 Meta Quest Sync connects an Obsidian desktop vault to the **Obsidian AR**
 WebXR experience on Meta Quest. From Obsidian, it exports the vault graph,
-starts the local bridge and HTTPS tunnel, and displays a QR code for pairing.
+connects to a companion bridge started by the user and displays a QR code for pairing.
 
 The WebXR viewer, Rust bridge and cross-platform orchestration live in the
 [Obsidian-Ar project](https://github.com/NElscost/Obsidian-Ar). This repository
@@ -20,10 +20,7 @@ contains only the Obsidian community plugin and its release artifacts.
 The recommended direct-graph mode does not require Blender, Obsidian CLI or the
 3D Graph New plugin.
 
-The plugin uses the same Node.js bridge launcher on Windows, Linux, and macOS.
-If a GUI-launched Obsidian cannot find Node.js, set an absolute path in
-**Settings → Meta Quest Sync → Node.js executable**. The companion project
-README lists package commands for each operating system.
+The companion bridge runs independently from Obsidian. This keeps process execution outside the community plugin and lets the user inspect, start and stop the bridge explicitly.
 
 ## Usage
 
@@ -36,15 +33,20 @@ README lists package commands for each operating system.
 
 3. Open **Settings → Meta Quest Sync** and select the absolute path of that
    clone.
-4. Keep the default HTTPS viewer and choose **Cloudflare Quick Tunnel** for a
-   temporary session.
-5. Select **Start AR**, then open the generated QR code on the Quest.
+4. Select **Connect** once to write the bridge configuration. The plugin will
+   report that the bridge is not running yet.
+5. Start the companion bridge from the cloned project:
+
+   ```sh
+   node Scripts/note-bridge.mjs start --port 8765
+   ```
+
+6. Keep the default HTTPS viewer, select **Connect** again, then open the
+   generated QR code on the Quest.
 
 Species map blocks support cached GBIF occurrence markers, click-safe map panning, regional photos and sounds, and an IUCN 3.1 status scale. In WebXR, regional recordings can also feed the optional Spectral Trail.
 
-The plugin creates the graph snapshot, compiles the Rust bridge when needed,
-starts the bridge and tunnel, and places the session credentials inside the URL
-fragment. The token is not persisted by the plugin.
+The plugin creates the graph snapshot and connects to the running bridge. The companion project manages compilation and the optional tunnel. Session credentials are placed in the URL fragment and are not persisted in plugin settings.
 
 ## Self-hosting
 
@@ -62,10 +64,10 @@ the session token and only accepts compatible HTTPS origins.
 
 ## Commands
 
-- Start AR session;
+- Connect to AR session;
 - Show session QR code;
 - Refresh graph snapshot;
-- Stop AR session.
+- Disconnect from AR session.
 
 The settings page follows the Obsidian/system language when Portuguese is detected and uses English for other languages. Select **Interface language → English** to force English.
 
@@ -115,20 +117,16 @@ The desktop plugin renders a color-coded, scrollable alignment. Use **Alignment*
 ## Privacy and network access
 
 Meta Quest Sync reads note paths and links through the Obsidian API to generate
-the graph. It starts local `cargo`, bridge and `cloudflared` processes through
-the companion project. The bridge exposes requested note content and media to
-the paired Quest through an HTTPS Cloudflare Tunnel.
+the graph. It does not launch executables or install software. The separately started companion bridge exposes requested note content and media to the paired Quest through an HTTPS Cloudflare Tunnel.
 
 Anyone holding both the temporary bridge URL and session token can access the
-allowed endpoints while the session is active. Keep them private and stop the
-session when finished. The plugin has no telemetry, advertising, payment flow
+allowed endpoints while the session is active. Keep them private and stop the companion bridge when finished. The plugin has no telemetry, advertising, payment flow
 or account system.
 
 ### Security safeguards
 
-The plugin launches the fixed `Scripts/note-bridge.mjs` companion entry point directly with Node.js, without a command shell. A custom Node.js setting must point to a real `node` or `node.exe` executable. Bridge diagnostics redact tokens and vault paths, session credentials are not stored in plugin settings, and the bridge is started only by an explicit command. Stopping the session terminates the managed bridge and tunnel processes.
+The plugin only connects to a companion bridge that the user started separately. It verifies the local bridge on port 8765, reads its short-lived session state, and never invokes a command shell, starts executables, installs programs, or terminates operating-system processes. Bridge credentials are not stored in plugin settings.
 
-These capabilities require filesystem, local-process and network access and may therefore be classified as **Risks** by automated or community review. The classification describes the plugin's privileged feature set; it is not eliminated by hiding the permissions. Review the companion project before use and prefer local-only analysis when a public WebXR session is unnecessary.
 
 See the [main project documentation](https://github.com/NElscost/Obsidian-Ar)
 for tunnel configuration, platform notes, WebXR gestures, troubleshooting and

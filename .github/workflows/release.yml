@@ -27,7 +27,7 @@ jobs:
           VERSION=$(node -p "require('./manifest.json').version")
           test "$GITHUB_REF_NAME" = "$VERSION"
       - name: Package
-        run: zip meta-quest-sync.zip main.js manifest.json styles.css
+        run: zip meta-quest-sync.zip main.js manifest.json styles.css spectral-engine.cjs
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
@@ -36,3 +36,4 @@ jobs:
             main.js
             manifest.json
             styles.css
+            spectral-engine.cjs

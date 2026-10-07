@@ -5952,7 +5952,7 @@ var require_leaflet_src = __commonJS({
         newEvent._simulated = true;
         return newEvent;
       }
-      var delay3 = 200;
+      var delay2 = 200;
       function addDoubleTapListener(obj, handler) {
         obj.addEventListener("dblclick", handler);
         var last = 0, detail;
@@ -5973,7 +5973,7 @@ var require_leaflet_src = __commonJS({
             return;
           }
           var now = Date.now();
-          if (now - last <= delay3) {
+          if (now - last <= delay2) {
             detail++;
             if (detail === 2) {
               handler(makeDblclick(e));
@@ -14239,33 +14239,11 @@ function createPairingUrl(viewerUrl, bridgeUrl, token, language) {
 }
 
 // src/session-manager.ts
-var import_node_child_process = require("node:child_process");
 var import_node_fs = require("node:fs");
 var import_node_path = __toESM(require("node:path"), 1);
 var import_obsidian2 = require("obsidian");
 function parseProcessState(contents) {
   return JSON.parse(contents.replace(/^\uFEFF/u, ""));
-}
-function safeDiagnostics(contents) {
-  return contents.replace(/^Token:\s*[^\r\n]+/gimu, "Token: [oculto]").replace(/^Vault:\s*[^\r\n]+/gimu, "Vault: [oculto]").replace(/(authorization:\s*bearer\s+)[^\s]+/gimu, "$1[oculto]").replace(/([?&](?:token|access_token)=)[^&#\s]+/gimu, "$1[oculto]").replace(/(#obsidian-ar=)[^\s]+/gimu, "$1[oculto]").trim();
-}
-function bridgeScript(projectRoot) {
-  const root = import_node_path.default.resolve(projectRoot);
-  const script = import_node_path.default.resolve(root, "Scripts", "note-bridge.mjs");
-  const expectedParent = import_node_path.default.resolve(root, "Scripts") + import_node_path.default.sep;
-  if (!script.startsWith(expectedParent)) throw new Error(tr("Caminho da ponte inv\xE1lido.", "Invalid bridge path."));
-  return script;
-}
-function nodeCommand(value) {
-  const command = value?.trim() || "node";
-  if (command === "node") return command;
-  if (!import_node_path.default.isAbsolute(command) || !/^node(?:\.exe)?$/iu.test(import_node_path.default.basename(command))) {
-    throw new Error(tr("Selecione somente o execut\xE1vel node ou node.exe.", "Select only the node or node.exe executable."));
-  }
-  return command;
-}
-function delay(milliseconds) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 async function exists(filePath) {
   try {
@@ -14276,7 +14254,6 @@ async function exists(filePath) {
   }
 }
 var SessionManager = class {
-  child = null;
   async configure(settings, vaultPath) {
     const configPath = import_node_path.default.join(settings.projectRoot, "note-bridge.config.json");
     const config = {
@@ -14290,8 +14267,9 @@ var SessionManager = class {
 `, "utf8");
   }
   async attach(settings) {
-    const statePath = import_node_path.default.join(settings.projectRoot, ".note-bridge-processes.json");
-    const tokenPath = import_node_path.default.join(settings.projectRoot, ".note-bridge-token");
+    const root = import_node_path.default.resolve(settings.projectRoot);
+    const statePath = import_node_path.default.join(root, ".note-bridge-processes.json");
+    const tokenPath = import_node_path.default.join(root, ".note-bridge-token");
     if (!await exists(statePath) || !await exists(tokenPath)) return null;
     try {
       const state = parseProcessState(await import_node_fs.promises.readFile(statePath, "utf8"));
@@ -14308,97 +14286,23 @@ var SessionManager = class {
       const verification = response.json;
       const capabilities = verification.capabilities ?? [];
       if (!capabilities.includes("waveform") || !capabilities.includes("mfcc-pca")) return null;
-      return { ...state, url: state.url?.startsWith("https://") ? state.url : localUrl, localUrl, token };
+      return {
+        ...state,
+        url: state.url?.startsWith("https://") ? state.url : localUrl,
+        localUrl,
+        token
+      };
     } catch {
       return null;
     }
   }
-  async start(settings, reportStatus = () => void 0, localOnly = false) {
+  async connect(settings) {
     const attached = await this.attach(settings);
-    if (attached) {
-      reportStatus(tr("Ponte existente reutilizada na mesma porta.", "Existing bridge reused on the same port."));
-      return attached;
-    }
-    const script = bridgeScript(settings.projectRoot);
-    if (!await exists(script)) throw new Error(tr(`${import_node_path.default.basename(script)} n\xE3o foi encontrado.`, `${import_node_path.default.basename(script)} was not found.`));
-    const statePath = import_node_path.default.join(settings.projectRoot, ".note-bridge-processes.json");
-    const tokenPath = import_node_path.default.join(settings.projectRoot, ".note-bridge-token");
-    const launchTime = Date.now();
-    let diagnostics = "";
-    let launchError = null;
-    reportStatus(localOnly ? tr("Iniciando a ponte local de an\xE1lise\u2026", "Starting the local analysis bridge\u2026") : tr("Iniciando a ponte Axum e o t\xFAnel HTTPS\u2026", "Starting the Axum bridge and HTTPS tunnel\u2026"));
-    const command = nodeCommand(settings.nodeExecutable);
-    const commandArgs = [script, "start", "--port", String(settings.port), ...localOnly ? ["--local-only"] : []];
-    this.child = (0, import_node_child_process.spawn)(
-      command,
-      commandArgs,
-      { cwd: import_node_path.default.resolve(settings.projectRoot), windowsHide: true, shell: false, stdio: ["ignore", "pipe", "pipe"] }
-    );
-    this.child.stdout?.on("data", (chunk) => {
-      diagnostics = `${diagnostics}${chunk.toString("utf8")}`.slice(-6e3);
-    });
-    this.child.stderr?.on("data", (chunk) => {
-      diagnostics = `${diagnostics}${chunk.toString("utf8")}`.slice(-6e3);
-    });
-    this.child.on("error", (error) => {
-      launchError = error;
-    });
-    const startedAt = Date.now();
-    let lastProgressStep = -1;
-    while (Date.now() - startedAt < 95e3) {
-      if (launchError) throw launchError;
-      if (await exists(statePath) && await exists(tokenPath)) {
-        try {
-          const metadata = await import_node_fs.promises.stat(statePath);
-          if (metadata.mtimeMs >= launchTime - 1e3) {
-            const state = parseProcessState(await import_node_fs.promises.readFile(statePath, "utf8"));
-            const token = (await import_node_fs.promises.readFile(tokenPath, "utf8")).trim();
-            const localUrl = `http://127.0.0.1:${state.port ?? settings.port}`;
-            const urlReady = localOnly ? state.url === localUrl : state.url?.startsWith("https://");
-            if (urlReady && token.length >= 32) {
-              reportStatus(localOnly ? tr("Ponte local de an\xE1lise pronta.", "Local analysis bridge ready.") : tr("Sess\xE3o pronta. Abrindo o QR Code\u2026", "Session ready. Opening the QR code\u2026"));
-              return { ...state, localUrl, token };
-            }
-          }
-        } catch {
-        }
-      }
-      if (this.child.exitCode !== null) {
-        throw new Error(safeDiagnostics(diagnostics) || tr(`A ponte terminou com c\xF3digo ${this.child.exitCode}.`, `The bridge exited with code ${this.child.exitCode}.`));
-      }
-      const elapsed = Date.now() - startedAt;
-      const progressStep = Math.floor(elapsed / 5e3);
-      if (progressStep !== lastProgressStep) {
-        lastProgressStep = progressStep;
-        reportStatus(elapsed < 12e3 ? tr("A ponte iniciou; aguardando a URL p\xFAblica do Cloudflare\u2026", "The bridge started; waiting for the public Cloudflare URL\u2026") : tr(`Verificando a URL HTTPS\u2026 ${Math.floor(elapsed / 1e3)} s`, `Checking the HTTPS URL\u2026 ${Math.floor(elapsed / 1e3)} s`));
-      }
-      await delay(500);
-    }
-    throw new Error(tr(`A ponte n\xE3o ficou pronta em 95 segundos. ${safeDiagnostics(diagnostics)}`, `The bridge was not ready within 95 seconds. ${safeDiagnostics(diagnostics)}`));
-  }
-  async stop(settings) {
-    const projectRoot = settings.projectRoot;
-    const script = bridgeScript(projectRoot);
-    if (!await exists(script)) throw new Error(tr(`${import_node_path.default.basename(script)} n\xE3o foi encontrado.`, `${import_node_path.default.basename(script)} was not found.`));
-    await new Promise((resolve, reject) => {
-      const command = nodeCommand(settings.nodeExecutable);
-      const commandArgs = [script, "stop"];
-      const child = (0, import_node_child_process.spawn)(
-        command,
-        commandArgs,
-        { cwd: import_node_path.default.resolve(projectRoot), windowsHide: true, shell: false, stdio: ["ignore", "pipe", "pipe"] }
-      );
-      let errorText = "";
-      child.stderr?.on("data", (chunk) => {
-        errorText += chunk.toString("utf8");
-      });
-      child.on("error", reject);
-      child.on("close", (code) => {
-        if (code === 0) resolve();
-        else reject(new Error(errorText.trim() || tr(`Falha ao encerrar a ponte (${code}).`, `Failed to stop the bridge (${code}).`)));
-      });
-    });
-    this.child = null;
+    if (attached) return attached;
+    throw new Error(tr(
+      "A ponte n\xE3o est\xE1 ativa. Inicie-a pelo projeto auxiliar e tente conectar novamente.",
+      "The bridge is not running. Start it from the companion project, then connect again."
+    ));
   }
 };
 
@@ -15523,7 +15427,7 @@ async function decodeImage(blob) {
   }
 }
 var RETRYABLE_STATUS = /* @__PURE__ */ new Set([408, 425, 429, 500, 502, 503, 504]);
-var delay2 = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
+var delay = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
 async function requestWithRetry(options, attempts = 3) {
   let lastError;
   for (let attempt = 0; attempt < attempts; attempt++) {
@@ -15535,7 +15439,7 @@ async function requestWithRetry(options, attempts = 3) {
       lastError = error;
       if (attempt === attempts - 1) throw error;
     }
-    await delay2(180 * (attempt + 1) * (attempt + 1));
+    await delay(180 * (attempt + 1) * (attempt + 1));
   }
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
@@ -16504,7 +16408,6 @@ var AudioSpectralRenderChild = class extends import_obsidian5.MarkdownRenderChil
 var DEFAULT_SETTINGS = {
   interfaceLanguage: "system",
   projectRoot: "",
-  nodeExecutable: "node",
   viewerUrl: "https://space-ar-quest.elscost.chatgpt.site/",
   port: 8765,
   tunnelMode: "quick",
@@ -16574,18 +16477,18 @@ var ObsidianArPlugin = class extends import_obsidian6.Plugin {
   sessionManager = new SessionManager();
   activeSession = null;
   startPromise = null;
-  sessionStatus = tr("Nenhuma sess\xE3o iniciada.", "No session started.");
+  sessionStatus = tr("Nenhuma sess\xE3o conectada.", "No session connected.");
   exportGraphDebounced = (0, import_obsidian6.debounce)(() => {
     if (this.settings.autoExport) void this.exportGraph(false);
   }, 1500, true);
   async onload() {
     await this.loadSettings();
     setLanguagePreference(this.settings.interfaceLanguage);
-    this.sessionStatus = tr("Nenhuma sess\xE3o iniciada.", "No session started.");
-    this.addRibbonIcon("glasses", tr("Iniciar Meta Quest Sync", "Start Meta Quest Sync"), () => void this.startAr());
+    this.sessionStatus = tr("Nenhuma sess\xE3o conectada.", "No session connected.");
+    this.addRibbonIcon("glasses", tr("Conectar Meta Quest Sync", "Connect Meta Quest Sync"), () => void this.startAr());
     this.addCommand({
       id: "start-ar-session",
-      name: tr("Iniciar sess\xE3o AR", "Start AR session"),
+      name: tr("Conectar \xE0 sess\xE3o AR", "Connect to AR session"),
       callback: () => void this.startAr()
     });
     this.addCommand({
@@ -16604,7 +16507,7 @@ var ObsidianArPlugin = class extends import_obsidian6.Plugin {
     });
     this.addCommand({
       id: "stop-ar-session",
-      name: tr("Encerrar sess\xE3o AR", "Stop AR session"),
+      name: tr("Desconectar da sess\xE3o AR", "Disconnect from AR session"),
       callback: () => void this.stopAr()
     });
     this.registerMarkdownCodeBlockProcessor("species-map", (source, element, context) => {
@@ -16669,28 +16572,24 @@ var ObsidianArPlugin = class extends import_obsidian6.Plugin {
     const root = this.settings.projectRoot.trim();
     if (!root) {
       new import_obsidian6.Notice(tr("Abra Configura\xE7\xF5es \u2192 Meta Quest Sync e informe a pasta do projeto.", "Open Settings \u2192 Meta Quest Sync and select the project folder."));
-      this.setSessionStatus(tr("Informe a pasta do projeto antes de iniciar.", "Select the project folder before starting."), report);
+      this.setSessionStatus(tr("Informe a pasta do projeto antes de conectar.", "Select the project folder before connecting."), report);
       return false;
     }
     this.startPromise = (async () => {
       try {
         this.setSessionStatus(tr("Exportando o grafo do vault\u2026", "Exporting the vault graph\u2026"), report);
-        new import_obsidian6.Notice(tr("Meta Quest Sync: preparando grafo, ponte e t\xFAnel\u2026", "Meta Quest Sync: preparing graph, bridge and tunnel\u2026"), 8e3);
+        new import_obsidian6.Notice(tr("Meta Quest Sync: preparando o grafo e procurando a ponte local\u2026", "Meta Quest Sync: preparing the graph and looking for the local bridge\u2026"), 8e3);
         await this.exportGraph(false);
-        this.setSessionStatus(tr("Salvando a configura\xE7\xE3o segura da ponte\u2026", "Saving the secure bridge configuration\u2026"), report);
+        this.setSessionStatus(tr("Salvando a configura\xE7\xE3o da ponte\u2026", "Saving the bridge configuration\u2026"), report);
         await this.sessionManager.configure(this.settings, this.vaultPath());
-        this.activeSession = await this.sessionManager.start(
-          this.settings,
-          (message) => this.setSessionStatus(message, report),
-          !showPairing
-        );
+        this.activeSession = await this.sessionManager.connect(this.settings);
         if (showPairing) this.showPairing();
-        this.setSessionStatus(showPairing ? tr("Sess\xE3o pronta para parear com o Quest.", "Session ready to pair with the Quest.") : tr("Ponte de an\xE1lise iniciada em segundo plano.", "Analysis bridge started in the background."), report);
+        this.setSessionStatus(showPairing ? tr("Sess\xE3o pronta para parear com o Quest.", "Session ready to pair with the Quest.") : tr("Ponte de an\xE1lise conectada.", "Analysis bridge connected."), report);
         if (showPairing) new import_obsidian6.Notice(tr("Meta Quest Sync pronto para parear com o Quest.", "Meta Quest Sync is ready to pair with the Quest."));
         return true;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        console.error(tr("Meta Quest Sync n\xE3o iniciou.", "Meta Quest Sync failed to start."), error);
+        console.error(tr("Meta Quest Sync n\xE3o conectou.", "Meta Quest Sync failed to connect."), error);
         this.setSessionStatus(tr(`Falha: ${message}`, `Failure: ${message}`), report);
         new import_obsidian6.Notice(`Meta Quest Sync: ${message}`, 12e3);
         return false;
@@ -16748,16 +16647,9 @@ var ObsidianArPlugin = class extends import_obsidian6.Plugin {
     return result;
   }
   async stopAr() {
-    const root = this.settings.projectRoot.trim();
-    if (!root) return;
-    try {
-      await this.sessionManager.stop(this.settings);
-      this.activeSession = null;
-      this.sessionStatus = tr("Sess\xE3o encerrada.", "Session stopped.");
-      new import_obsidian6.Notice(tr("Sess\xE3o Meta Quest Sync encerrada.", "Meta Quest Sync session stopped."));
-    } catch (error) {
-      new import_obsidian6.Notice(tr(`N\xE3o foi poss\xEDvel encerrar: ${String(error)}`, `Could not stop the session: ${String(error)}`), 1e4);
-    }
+    this.activeSession = null;
+    this.sessionStatus = tr("Sess\xE3o desconectada.", "Session disconnected.");
+    new import_obsidian6.Notice(tr("Meta Quest Sync desconectado. A ponte externa continua sob controle do usu\xE1rio.", "Meta Quest Sync disconnected. The external bridge remains under user control."));
   }
   showPairing() {
     if (!this.activeSession) return;
@@ -16805,10 +16697,6 @@ var ObsidianArSettingTab = class extends import_obsidian6.PluginSettingTab {
       this.plugin.settings.viewerUrl = value.trim();
       await this.plugin.saveSettings();
     }));
-    new import_obsidian6.Setting(containerEl).setName(tr("Execut\xE1vel Node.js", "Node.js executable")).setDesc(tr("Use 'node' ou um caminho absoluto. No macOS, tente /opt/homebrew/bin/node.", "Use 'node' or an absolute path. On macOS, try /opt/homebrew/bin/node.")).addText((text) => text.setValue(this.plugin.settings.nodeExecutable).onChange(async (value) => {
-      this.plugin.settings.nodeExecutable = value.trim() || "node";
-      await this.plugin.saveSettings();
-    }));
     new import_obsidian6.Setting(containerEl).setName(tr("Porta local", "Local port")).setDesc(tr("Porta usada pela ponte Axum.", "Port used by the Axum bridge.")).addText((text) => text.setValue(String(this.plugin.settings.port)).onChange(async (value) => {
       const port = Number.parseInt(value, 10);
       if (port >= 1024 && port <= 65535) this.plugin.settings.port = port;
@@ -16842,14 +16730,14 @@ var ObsidianArSettingTab = class extends import_obsidian6.PluginSettingTab {
       await this.plugin.saveSettings();
     }));
     const sessionSetting = new import_obsidian6.Setting(containerEl).setName(tr("Sess\xE3o AR", "AR session")).setDesc(this.plugin.sessionStatus);
-    sessionSetting.addButton((button) => button.setCta().setButtonText(tr("Iniciar AR", "Start AR")).onClick(async () => {
-      button.setDisabled(true).setButtonText(tr("Iniciando\u2026", "Starting\u2026"));
+    sessionSetting.addButton((button) => button.setCta().setButtonText(tr("Conectar", "Connect")).onClick(async () => {
+      button.setDisabled(true).setButtonText(tr("Conectando\u2026", "Connecting\u2026"));
       try {
         await this.plugin.startAr((message) => sessionSetting.setDesc(message));
       } finally {
-        button.setDisabled(false).setButtonText(tr("Iniciar AR", "Start AR"));
+        button.setDisabled(false).setButtonText(tr("Conectar", "Connect"));
       }
-    })).addButton((button) => button.setWarning().setButtonText(tr("Encerrar", "Stop")).onClick(() => {
+    })).addButton((button) => button.setWarning().setButtonText(tr("Desconectar", "Disconnect")).onClick(() => {
       void this.plugin.stopAr();
     }));
   }

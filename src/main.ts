@@ -24,7 +24,6 @@ import { AudioSpectralRenderChild } from "./audio-spectral";
 interface ObsidianArSettings {
   interfaceLanguage: LanguagePreference;
   projectRoot: string;
-  nodeExecutable: string;
   viewerUrl: string;
   port: number;
   tunnelMode: "quick" | "named";
@@ -38,7 +37,6 @@ interface ObsidianArSettings {
 const DEFAULT_SETTINGS: ObsidianArSettings = {
   interfaceLanguage: "system",
   projectRoot: "",
-  nodeExecutable: "node",
   viewerUrl: "https://space-ar-quest.elscost.chatgpt.site/",
   port: 8765,
   tunnelMode: "quick",
@@ -118,7 +116,7 @@ export default class ObsidianArPlugin extends Plugin {
   private readonly sessionManager = new SessionManager();
   private activeSession: ActiveSession | null = null;
   private startPromise: Promise<boolean> | null = null;
-  sessionStatus = tr("Nenhuma sessão iniciada.", "No session started.");
+  sessionStatus = tr("Nenhuma sessão conectada.", "No session connected.");
   private exportGraphDebounced = debounce(() => {
     if (this.settings.autoExport) void this.exportGraph(false);
   }, 1500, true);
@@ -126,11 +124,11 @@ export default class ObsidianArPlugin extends Plugin {
   async onload(): Promise<void> {
     await this.loadSettings();
     setLanguagePreference(this.settings.interfaceLanguage);
-    this.sessionStatus = tr("Nenhuma sessão iniciada.", "No session started.");
-    this.addRibbonIcon("glasses", tr("Iniciar Meta Quest Sync", "Start Meta Quest Sync"), () => void this.startAr());
+    this.sessionStatus = tr("Nenhuma sessão conectada.", "No session connected.");
+    this.addRibbonIcon("glasses", tr("Conectar Meta Quest Sync", "Connect Meta Quest Sync"), () => void this.startAr());
     this.addCommand({
       id: "start-ar-session",
-      name: tr("Iniciar sessão AR", "Start AR session"),
+      name: tr("Conectar à sessão AR", "Connect to AR session"),
       callback: () => void this.startAr()
     });
     this.addCommand({
@@ -149,7 +147,7 @@ export default class ObsidianArPlugin extends Plugin {
     });
     this.addCommand({
       id: "stop-ar-session",
-      name: tr("Encerrar sessão AR", "Stop AR session"),
+      name: tr("Desconectar da sessão AR", "Disconnect from AR session"),
       callback: () => void this.stopAr()
     });
     this.registerMarkdownCodeBlockProcessor("species-map", (source, element, context) => {
@@ -218,28 +216,24 @@ export default class ObsidianArPlugin extends Plugin {
     const root = this.settings.projectRoot.trim();
     if (!root) {
       new Notice(tr("Abra Configurações → Meta Quest Sync e informe a pasta do projeto.", "Open Settings → Meta Quest Sync and select the project folder."));
-      this.setSessionStatus(tr("Informe a pasta do projeto antes de iniciar.", "Select the project folder before starting."), report);
+      this.setSessionStatus(tr("Informe a pasta do projeto antes de conectar.", "Select the project folder before connecting."), report);
       return false;
     }
     this.startPromise = (async () => {
       try {
         this.setSessionStatus(tr("Exportando o grafo do vault…", "Exporting the vault graph…"), report);
-        new Notice(tr("Meta Quest Sync: preparando grafo, ponte e túnel…", "Meta Quest Sync: preparing graph, bridge and tunnel…"), 8000);
+        new Notice(tr("Meta Quest Sync: preparando o grafo e procurando a ponte local…", "Meta Quest Sync: preparing the graph and looking for the local bridge…"), 8000);
         await this.exportGraph(false);
-        this.setSessionStatus(tr("Salvando a configuração segura da ponte…", "Saving the secure bridge configuration…"), report);
+        this.setSessionStatus(tr("Salvando a configuração da ponte…", "Saving the bridge configuration…"), report);
         await this.sessionManager.configure(this.settings, this.vaultPath());
-        this.activeSession = await this.sessionManager.start(
-          this.settings,
-          (message) => this.setSessionStatus(message, report),
-          !showPairing
-        );
+        this.activeSession = await this.sessionManager.connect(this.settings);
         if (showPairing) this.showPairing();
-        this.setSessionStatus(showPairing ? tr("Sessão pronta para parear com o Quest.", "Session ready to pair with the Quest.") : tr("Ponte de análise iniciada em segundo plano.", "Analysis bridge started in the background."), report);
+        this.setSessionStatus(showPairing ? tr("Sessão pronta para parear com o Quest.", "Session ready to pair with the Quest.") : tr("Ponte de análise conectada.", "Analysis bridge connected."), report);
         if (showPairing) new Notice(tr("Meta Quest Sync pronto para parear com o Quest.", "Meta Quest Sync is ready to pair with the Quest."));
         return true;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        console.error(tr("Meta Quest Sync não iniciou.", "Meta Quest Sync failed to start."), error);
+        console.error(tr("Meta Quest Sync não conectou.", "Meta Quest Sync failed to connect."), error);
         this.setSessionStatus(tr(`Falha: ${message}`, `Failure: ${message}`), report);
         new Notice(`Meta Quest Sync: ${message}`, 12000);
         return false;
@@ -298,16 +292,9 @@ export default class ObsidianArPlugin extends Plugin {
   }
 
   async stopAr(): Promise<void> {
-    const root = this.settings.projectRoot.trim();
-    if (!root) return;
-    try {
-      await this.sessionManager.stop(this.settings);
-      this.activeSession = null;
-      this.sessionStatus = tr("Sessão encerrada.", "Session stopped.");
-      new Notice(tr("Sessão Meta Quest Sync encerrada.", "Meta Quest Sync session stopped."));
-    } catch (error) {
-      new Notice(tr(`Não foi possível encerrar: ${String(error)}`, `Could not stop the session: ${String(error)}`), 10000);
-    }
+    this.activeSession = null;
+    this.sessionStatus = tr("Sessão desconectada.", "Session disconnected.");
+    new Notice(tr("Meta Quest Sync desconectado. A ponte externa continua sob controle do usuário.", "Meta Quest Sync disconnected. The external bridge remains under user control."));
   }
 
   private showPairing(): void {
@@ -380,15 +367,6 @@ class ObsidianArSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
     new Setting(containerEl)
-      .setName(tr("Executável Node.js", "Node.js executable"))
-      .setDesc(tr("Use 'node' ou um caminho absoluto. No macOS, tente /opt/homebrew/bin/node.", "Use 'node' or an absolute path. On macOS, try /opt/homebrew/bin/node."))
-      .addText((text) => text
-        .setValue(this.plugin.settings.nodeExecutable)
-        .onChange(async (value) => {
-          this.plugin.settings.nodeExecutable = value.trim() || "node";
-          await this.plugin.saveSettings();
-        }));
-    new Setting(containerEl)
       .setName(tr("Porta local", "Local port"))
       .setDesc(tr("Porta usada pela ponte Axum.", "Port used by the Axum bridge."))
       .addText((text) => text
@@ -449,15 +427,15 @@ class ObsidianArSettingTab extends PluginSettingTab {
       .setName(tr("Sessão AR", "AR session"))
       .setDesc(this.plugin.sessionStatus);
     sessionSetting
-      .addButton((button) => button.setCta().setButtonText(tr("Iniciar AR", "Start AR")).onClick(async () => {
-        button.setDisabled(true).setButtonText(tr("Iniciando…", "Starting…"));
+      .addButton((button) => button.setCta().setButtonText(tr("Conectar", "Connect")).onClick(async () => {
+        button.setDisabled(true).setButtonText(tr("Conectando…", "Connecting…"));
         try {
           await this.plugin.startAr((message) => sessionSetting.setDesc(message));
         } finally {
-          button.setDisabled(false).setButtonText(tr("Iniciar AR", "Start AR"));
+          button.setDisabled(false).setButtonText(tr("Conectar", "Connect"));
         }
       }))
-      .addButton((button) => button.setWarning().setButtonText(tr("Encerrar", "Stop")).onClick(() => {
+      .addButton((button) => button.setWarning().setButtonText(tr("Desconectar", "Disconnect")).onClick(() => {
         void this.plugin.stopAr();
       }));
   }

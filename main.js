@@ -14581,16 +14581,15 @@ function mountDesktopSpectralTrail(audio, host, loadAnalysis, options = {}) {
   glCanvas.className = canvas.className;
   glCanvas.width = 960;
   glCanvas.height = 480;
-  glCanvas.style.display = "none";
+  glCanvas.addClass("is-hidden");
   const glViewport = document.createElement("div");
-  glViewport.style.position = "relative";
-  glViewport.style.width = "100%";
+  glViewport.className = "meta-quest-spectral-viewport";
   canvas.insertAdjacentElement("beforebegin", glViewport);
   glViewport.append(glCanvas, canvas);
   const labelCanvas = document.createElement("canvas");
   labelCanvas.width = 960;
   labelCanvas.height = 480;
-  labelCanvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none";
+  labelCanvas.className = "meta-quest-spectral-labels";
   glViewport.append(labelCanvas);
   const panelCanvases = panelTitles.map((title2) => {
     const panel = dashboard.createDiv({ cls: "meta-quest-spectral-panel" });
@@ -15062,8 +15061,8 @@ function mountDesktopSpectralTrail(audio, host, loadAnalysis, options = {}) {
   mode.onclick = () => {
     emissions = !emissions;
     if (scene3d) {
-      glCanvas.style.display = emissions ? "" : "none";
-      canvas.style.display = emissions ? "none" : "";
+      glCanvas.classList.toggle("is-hidden", !emissions);
+      canvas.classList.toggle("is-hidden", emissions);
     }
     mode.setText(
       emissions ? tr("Modo: emiss\xF5es", "Mode: emissions") : tr("Modo: PCA", "Mode: PCA")
@@ -15170,8 +15169,8 @@ function mountDesktopSpectralTrail(audio, host, loadAnalysis, options = {}) {
         glCanvas.clientHeight || 480
       );
       scene3d.setOrbit(auto);
-      canvas.style.display = "none";
-      glCanvas.style.display = "";
+      canvas.addClass("is-hidden");
+      glCanvas.removeClass("is-hidden");
     }).catch((error) => {
       console.error(
         "[meta-quest-sync] Three.js spectral engine failed",
@@ -15180,9 +15179,9 @@ function mountDesktopSpectralTrail(audio, host, loadAnalysis, options = {}) {
       status.setText(
         `WebGL indispon\xEDvel \xB7 fallback 2D: ${error instanceof Error ? error.message : String(error)}`
       );
-      glCanvas.style.display = "none";
-      labelCanvas.style.display = "none";
-      canvas.style.display = "";
+      glCanvas.addClass("is-hidden");
+      labelCanvas.addClass("is-hidden");
+      canvas.removeClass("is-hidden");
     });
     filteredPoints = [];
     hubPoints = [];
@@ -15277,14 +15276,11 @@ async function coordinates(key) {
   coordinateCache.set(key, pending);
   return pending;
 }
-function zoomIcon(plus) {
-  return `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="10" cy="10" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14.5 14.5 20 20M7 10h6${plus ? "M10 7v6" : ""}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
-}
 async function mountLeafletSpeciesMap(container, config, options) {
   container.addClass("meta-quest-species-map", "meta-quest-species-map-vector");
   const toolbar = container.createDiv({ cls: "meta-quest-species-map-toolbar" }), status = toolbar.createSpan({ text: "Abrindo mapa global\u2026" }), minus = toolbar.createEl("button", { attr: { "aria-label": "Zoom out" } }), plus = toolbar.createEl("button", { attr: { "aria-label": "Zoom in" } }), host = container.createDiv({ cls: "meta-quest-species-vector-host" }), attribution = container.createDiv({ cls: "meta-quest-species-attribution", text: "\xA9 OpenStreetMap contributors \xB7 data \xA9 GBIF" });
-  minus.innerHTML = zoomIcon(false);
-  plus.innerHTML = zoomIcon(true);
+  (0, import_obsidian3.setIcon)(minus, "zoom-out");
+  (0, import_obsidian3.setIcon)(plus, "zoom-in");
   const map2 = L2.map(host, { center: config.center, zoom: config.zoom, zoomControl: false, attributionControl: false, preferCanvas: false, worldCopyJump: true, zoomAnimation: true, fadeAnimation: true, markerZoomAnimation: true });
   L2.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, crossOrigin: true, updateWhenIdle: false, keepBuffer: 3 }).addTo(map2);
   let disposed = false, renderFrame = 0, detachTimer = 0;
@@ -15365,7 +15361,7 @@ async function mountLeafletSpeciesMap(container, config, options) {
         last = result;
         boundaryLayer.clearLayers();
         if (result.geometry) boundaryLayer.addData({ type: "Feature", properties: {}, geometry: result.geometry });
-        host.style.cursor = result.geometry ? "pointer" : "grab";
+        host.classList.toggle("is-selectable", !!result.geometry);
         status.setText(result.name ? `${result.name} \xB7 clique para selecionar` : `${matched.name} \xB7 ${points.length.toLocaleString()} coordenadas em cache`);
       }).catch(() => void 0);
     }, 100);
@@ -15373,7 +15369,7 @@ async function mountLeafletSpeciesMap(container, config, options) {
   map2.on("mouseout", () => {
     generation++;
     if (hoverTimer !== null) window.clearTimeout(hoverTimer);
-    host.style.cursor = "grab";
+    host.classList.remove("is-selectable");
   });
   map2.on("click", (event) => {
     status.setText("Carregando todas as fotos e sons da regi\xE3o\u2026");
@@ -15836,32 +15832,24 @@ function showRegion(container, r, options) {
   });
   else empirical.setText("Faixa emp\xEDrica dispon\xEDvel ao analisar uma grava\xE7\xE3o.");
 }
-function zoomIcon2(plus) {
-  return `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="10" cy="10" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14.5 14.5 20 20M7 10h6${plus ? "M10 7v6" : ""}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
-}
 async function renderRasterSpeciesMap(source, container, options = {}) {
   const c = parse(source);
   container.addClass("meta-quest-species-map");
   const bar = container.createDiv({ cls: "meta-quest-species-map-toolbar" }), status = bar.createSpan({ text: "Loading GBIF occurrence map\u2026" }), minus = bar.createEl("button", { text: "\u2212", attr: { "aria-label": "Zoom out" } }), plus = bar.createEl("button", { text: "+", attr: { "aria-label": "Zoom in" } }), viewport = container.createDiv({ cls: "meta-quest-species-map-viewport" }), image = viewport.createEl("img", { cls: "meta-quest-species-map-image", attr: { alt: "Species occurrence map", draggable: "false" } }), boundary = viewport.createEl("canvas", { cls: "meta-quest-species-boundary", attr: { width: "900", height: "600", "aria-hidden": "true" } });
-  minus.innerHTML = zoomIcon2(false);
-  plus.innerHTML = zoomIcon2(true);
-  image.style.cursor = "grab";
-  image.style.touchAction = "none";
-  image.style.userSelect = "none";
+  (0, import_obsidian4.setIcon)(minus, "zoom-out");
+  (0, import_obsidian4.setIcon)(plus, "zoom-in");
   image.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopImmediatePropagation();
   });
   let generation = 0, selectedBoundary = null, hoveredRegion = null, hoverGeneration = 0, hoverTimer = null;
   const settleViewport = () => {
-    viewport.style.transition = "none";
-    viewport.style.transform = "";
-    viewport.style.transformOrigin = "50% 50%";
-    requestAnimationFrame(() => viewport.style.transition = "");
+    viewport.removeClass("is-zooming");
+    viewport.setCssProps({ "--map-shift-x": "0px", "--map-shift-y": "0px", "--map-scale": "1", "--map-origin-x": "50%", "--map-origin-y": "50%" });
   };
   const update = async () => {
     const current = ++generation;
-    boundary.style.visibility = "hidden";
+    boundary.addClass("is-hidden");
     status.setText("Loading GBIF occurrence map\u2026");
     try {
       const result = await raster(c);
@@ -15878,12 +15866,12 @@ async function renderRasterSpeciesMap(source, container, options = {}) {
       image.alt = `Occurrence map for ${result.name}`;
       settleViewport();
       drawBoundary(boundary, c, selectedBoundary);
-      boundary.style.visibility = "visible";
+      boundary.removeClass("is-hidden");
       status.setText(result.degraded ? `${result.name} \xB7 mapa parcial; mova para tentar novamente` : `${result.name} \xB7 zoom ${c.zoom} \xB7 drag to pan`);
     } catch (e) {
       if (current === generation) {
         settleViewport();
-        boundary.style.visibility = "visible";
+        boundary.removeClass("is-hidden");
         drawBoundary(boundary, c, selectedBoundary);
         status.setText(`Map unavailable: ${e instanceof Error ? e.message : String(e)}`);
       }
@@ -15902,10 +15890,9 @@ async function renderRasterSpeciesMap(source, container, options = {}) {
     if (next === c.zoom) return;
     const scale = next > c.zoom ? 1.72 : 0.62;
     c.zoom = next;
-    viewport.style.transformOrigin = `${originX}% ${originY}%`;
-    viewport.style.transition = "transform 140ms cubic-bezier(.2,.8,.2,1)";
-    viewport.style.transform = `scale(${scale})`;
-    boundary.style.visibility = "hidden";
+    viewport.setCssProps({ "--map-origin-x": `${originX}%`, "--map-origin-y": `${originY}%`, "--map-scale": String(scale) });
+    viewport.addClass("is-zooming");
+    boundary.addClass("is-hidden");
     scheduleUpdate();
   };
   minus.onclick = () => zoomTo(c.zoom - 1);
@@ -15915,7 +15902,7 @@ async function renderRasterSpeciesMap(source, container, options = {}) {
     if (event.button !== 0 && event.pointerType === "mouse") return;
     drag = { id: event.pointerId, x: event.clientX, y: event.clientY, dx: 0, dy: 0, moved: false };
     image.setPointerCapture(event.pointerId);
-    image.style.cursor = "grabbing";
+    image.addClass("is-dragging");
     event.preventDefault();
     event.stopPropagation();
   });
@@ -15938,7 +15925,7 @@ async function renderRasterSpeciesMap(source, container, options = {}) {
     drag.dx = event.clientX - drag.x;
     drag.dy = event.clientY - drag.y;
     if (Math.hypot(drag.dx, drag.dy) > 7) drag.moved = true;
-    viewport.style.transform = `translate(${drag.dx}px,${drag.dy}px) scale(1.025)`;
+    viewport.setCssProps({ "--map-shift-x": `${drag.dx}px`, "--map-shift-y": `${drag.dy}px`, "--map-scale": "1.025" });
     event.preventDefault();
   });
   const finish = (event) => {
@@ -15947,14 +15934,13 @@ async function renderRasterSpeciesMap(source, container, options = {}) {
     event.stopPropagation();
     const finalDx = event.clientX - drag.x, finalDy = event.clientY - drag.y, moved = drag.moved || Math.hypot(finalDx, finalDy) > 7, dx = moved ? finalDx : drag.dx, dy = moved ? finalDy : drag.dy;
     drag = null;
-    image.style.cursor = "grab";
+    image.removeClass("is-dragging");
     if (!moved) {
-      viewport.style.transform = "";
+      viewport.setCssProps({ "--map-shift-x": "0px", "--map-shift-y": "0px", "--map-scale": "1" });
       const bounds = image.getBoundingClientRect();
       let marker = viewport.querySelector(".meta-quest-species-selection");
       if (!marker) marker = viewport.createSpan({ cls: "meta-quest-species-selection" });
-      marker.style.left = (event.clientX - bounds.left) / bounds.width * 100 + "%";
-      marker.style.top = (event.clientY - bounds.top) / bounds.height * 100 + "%";
+      marker.setCssProps({ "--marker-x": (event.clientX - bounds.left) / bounds.width * 100 + "%", "--marker-y": (event.clientY - bounds.top) / bounds.height * 100 + "%" });
       status.setText("Loading regional photos and sounds\u2026");
       const clickU = (event.clientX - bounds.left) / bounds.width, clickV = (event.clientY - bounds.top) / bounds.height, selected = hoveredRegion;
       void loadRegion(c, selected?.u ?? clickU, selected?.v ?? clickV, selected).then((r) => {
@@ -16005,28 +15991,28 @@ function renderIucnStatus(root) {
   for (const el of Array.from(root.querySelectorAll("p,blockquote p"))) {
     const text = (el.textContent || "").replace(/\s+/g, " ").trim();
     if (!/IUCN\s*3\.1\s*:/i.test(text) || el.querySelector(".meta-quest-iucn")) continue;
-    const marked = el.querySelector("mark")?.textContent?.trim().toUpperCase(), active = marked && cats.includes(marked) ? marked : "LC", scale = document.createElement("div");
-    scale.className = "meta-quest-iucn";
-    scale.style.cssText = "margin:8px auto;max-width:500px;text-align:center;font:600 13px system-ui";
+    const marked = el.querySelector("mark")?.textContent?.trim().toUpperCase();
+    const active = marked && cats.includes(marked) ? marked : "LC";
+    const scale = document.createElement("div");
+    scale.className = "meta-quest-iucn meta-quest-iucn-inline";
     const title = document.createElement("div");
+    title.className = "meta-quest-iucn-title";
     title.textContent = active === "LC" ? tr("Pouco Preocupante", "Least Concern") : "IUCN " + active;
-    title.style.cssText = "margin-bottom:7px;color:#1167b1;font-weight:800";
     const row = document.createElement("div");
-    row.style.cssText = "display:flex;justify-content:center;gap:5px";
+    row.className = "meta-quest-iucn-row";
     for (const c of cats) {
       const x = document.createElement("span");
+      x.className = `meta-quest-iucn-category${c === active ? " is-active" : ""}`;
       x.textContent = c;
-      x.style.cssText = "display:grid;place-items:center;width:27px;height:27px;border:1.5px solid " + (c === active ? "#153c14" : "#6f7781") + ";border-radius:50%;background:" + (c === active ? "#18aa24" : "#fff") + ";color:" + (c === active ? "#fff" : "#303840") + ";font-size:11px;font-weight:800;box-sizing:border-box";
       row.append(x);
     }
     const labels = document.createElement("div");
-    labels.style.cssText = "display:grid;grid-template-columns:54px 135px 76px;justify-content:center;margin-top:4px;color:var(--text-muted);font-size:10px;font-weight:500;line-height:1.1";
+    labels.className = "meta-quest-iucn-labels";
     for (const label of [tr("Extinta", "Extinct"), tr("Amea\xE7ada", "Threatened"), tr("Pouco preocupante", "Least concern")]) {
       const item = document.createElement("span");
       item.textContent = label;
       labels.append(item);
     }
-    ;
     scale.append(title, row, labels);
     el.replaceWith(scale);
   }
@@ -16059,14 +16045,13 @@ function renderIucn(source, container) {
 }
 
 // src/fasta.ts
-var COLORS = { hydrophobic: "#63e6be", polar: "#74c0fc", acidic: "#ff8787", basic: "#b197fc", special: "#ffd166", gap: "#36445a", unknown: "#74839a" };
-function residueColor(value) {
-  if ("AVILMFWY".includes(value)) return COLORS.hydrophobic;
-  if ("STNQ".includes(value)) return COLORS.polar;
-  if ("DE".includes(value)) return COLORS.acidic;
-  if ("KRH".includes(value)) return COLORS.basic;
-  if ("CGP".includes(value)) return COLORS.special;
-  return value === "-" || value === "." ? COLORS.gap : COLORS.unknown;
+function residueGroup(value) {
+  if ("AVILMFWY".includes(value)) return "hydrophobic";
+  if ("STNQ".includes(value)) return "polar";
+  if ("DE".includes(value)) return "acidic";
+  if ("KRH".includes(value)) return "basic";
+  if ("CGP".includes(value)) return "special";
+  return value === "-" || value === "." ? "gap" : "unknown";
 }
 function parseFasta(source) {
   const sequences = [];
@@ -16182,10 +16167,7 @@ function renderAlignment(sequences, length, container) {
   for (const item of sequences) {
     grid.createDiv({ cls: "meta-quest-fasta-id", text: item.id });
     const row = grid.createDiv({ cls: "meta-quest-fasta-sequence" });
-    for (const residue of item.sequence.slice(0, 1e4)) {
-      const cell = row.createSpan({ text: residue });
-      cell.style.backgroundColor = residueColor(residue);
-    }
+    for (const residue of item.sequence.slice(0, 1e4)) row.createSpan({ cls: `meta-quest-fasta-${residueGroup(residue)}`, text: residue });
   }
   if (length > 1e4) container.createDiv({ cls: "meta-quest-fasta-warning", text: "Preview limited to 10,000 residues per sequence." });
 }

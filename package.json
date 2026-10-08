@@ -1,6 +1,6 @@
 {
     "name": "meta-quest-sync",
-    "version": "0.1.18",
+    "version": "0.1.19",
     "license": "MIT",
     "private": true,
     "type": "module",
@@ -8,7 +8,7 @@
     "scripts": {
         "dev": "node esbuild.config.mjs",
         "build": "tsc --noEmit && node esbuild.config.mjs production",
-        "test": "node --test tests/*.test.mjs"
+        "test": "node --test tests"
     },
     "dependencies": {
         "leaflet": "^1.9.4",

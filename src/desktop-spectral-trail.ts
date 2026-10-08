@@ -369,17 +369,15 @@ export function mountDesktopSpectralTrail(
   glCanvas.className = canvas.className;
   glCanvas.width = 960;
   glCanvas.height = 480;
-  glCanvas.style.display = "none";
+  glCanvas.addClass("is-hidden");
   const glViewport = document.createElement("div");
-  glViewport.style.position = "relative";
-  glViewport.style.width = "100%";
+  glViewport.className = "meta-quest-spectral-viewport";
   canvas.insertAdjacentElement("beforebegin", glViewport);
   glViewport.append(glCanvas, canvas);
   const labelCanvas = document.createElement("canvas");
   labelCanvas.width = 960;
   labelCanvas.height = 480;
-  labelCanvas.style.cssText =
-    "position:absolute;inset:0;width:100%;height:100%;pointer-events:none";
+  labelCanvas.className = "meta-quest-spectral-labels";
   glViewport.append(labelCanvas);
   const panelCanvases = panelTitles.map((title) => {
     const panel = dashboard.createDiv({ cls: "meta-quest-spectral-panel" });
@@ -1001,8 +999,8 @@ export function mountDesktopSpectralTrail(
   mode.onclick = () => {
     emissions = !emissions;
     if (scene3d) {
-      glCanvas.style.display = emissions ? "" : "none";
-      canvas.style.display = emissions ? "none" : "";
+      glCanvas.classList.toggle("is-hidden", !emissions);
+      canvas.classList.toggle("is-hidden", emissions);
     }
     mode.setText(
       emissions
@@ -1119,8 +1117,8 @@ export function mountDesktopSpectralTrail(
             glCanvas.clientHeight || 480,
           );
           scene3d.setOrbit(auto);
-          canvas.style.display = "none";
-          glCanvas.style.display = "";
+          canvas.addClass("is-hidden");
+          glCanvas.removeClass("is-hidden");
         })
         .catch((error) => {
           console.error(
@@ -1130,9 +1128,9 @@ export function mountDesktopSpectralTrail(
           status.setText(
             `WebGL indisponível · fallback 2D: ${error instanceof Error ? error.message : String(error)}`,
           );
-          glCanvas.style.display = "none";
-          labelCanvas.style.display = "none";
-          canvas.style.display = "";
+          glCanvas.addClass("is-hidden");
+          labelCanvas.addClass("is-hidden");
+          canvas.removeClass("is-hidden");
         });
       filteredPoints = [];
       hubPoints = [];

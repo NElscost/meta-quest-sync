@@ -86,6 +86,10 @@ zoom: 2
 style: classic.point
 ```
 
+<video src="https://github.com/NElscost/meta-quest-sync/raw/refs/heads/main/video/Sound%20Analyser.mp4" controls preload="none" aria-label="Species map and 3D sound trail demonstration"></video>
+
+[Watch the species map and sound analyser demonstration](video/Sound%20Analyser.mp4).
+
 Select a map region to see its inferred name, occurrence count, photos and recordings. Regional recordings can generate an interactive **3D sound trail**, inspired by Lucio Arese's [Seeing Birdsong](https://www.lucioarese.net/seeing-birdsong/) project. Dragging pans the desktop map.
 
 ### IUCN status
@@ -127,6 +131,8 @@ or account system.
 
 The plugin only connects to a companion bridge that the user started separately. It verifies the local bridge on port 8765, reads its short-lived session state, and never invokes a command shell, starts executables, installs programs, or terminates operating-system processes. Bridge credentials are not stored in plugin settings.
 
+The desktop integration uses filesystem access to read session state and write the exported graph in the explicitly configured companion project folder, outside the vault. Note discovery uses the vault API. Map caches and spectral filter preferences use Obsidian's vault-scoped storage; the plugin respects custom configuration folder names.
+
 
 See the [main project documentation](https://github.com/NElscost/Obsidian-Ar)
 for tunnel configuration, platform notes, WebXR gestures, troubleshooting and
@@ -136,6 +142,7 @@ the optional glTF pipeline.
 
 ```sh
 npm ci
+npm run lint
 npm test
 npm run build
 ```

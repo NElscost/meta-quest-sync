@@ -1,5 +1,9 @@
 import { tr } from "./i18n";
 import type { SpectralScene } from "./spectral-scene";
+import { FileSystemAdapter } from "obsidian";
+import { join } from "node:path";
+import { createRequire } from "node:module";
+import { getPluginApp, loadVaultValue, saveVaultValue } from "./plugin-context";
 
 type SpectralPoint = {
   timeMs: number;
@@ -45,25 +49,20 @@ let spectralEngine: {
 } | null = null;
 function loadSpectralEngine() {
   if (spectralEngine) return spectralEngine;
-  const obsidianApp = (globalThis as any).app,
-    adapter = obsidianApp?.vault?.adapter,
-    base =
-      typeof adapter?.getBasePath === "function"
-        ? adapter.getBasePath()
-        : adapter?.basePath,
-    config = obsidianApp?.vault?.configDir || ".obsidian";
-  if (!base)
+  const app = getPluginApp();
+  const adapter = app.vault.adapter;
+  if (!(adapter instanceof FileSystemAdapter))
     throw new Error(
       "Diretório do vault indisponível para localizar o motor espectral.",
     );
-  const enginePath = require("path").join(
-      base,
-      config,
+  const enginePath = join(
+      adapter.getBasePath(),
+      app.vault.configDir,
       "plugins",
       "meta-quest-sync",
       "spectral-engine.cjs",
     ),
-    nodeRequire = require("module").createRequire(enginePath),
+    nodeRequire = createRequire(enginePath),
     resolved = nodeRequire.resolve(enginePath);
   delete nodeRequire.cache[resolved];
   spectralEngine = nodeRequire(resolved) as typeof spectralEngine;
@@ -273,10 +272,10 @@ export function mountDesktopSpectralTrail(
   const savedKey = options.storageKey
     ? `meta-quest-spectral-frequency:${options.storageKey}`
     : "meta-quest-spectral-frequency:default";
-  let saved: { minHz?: number; maxHz?: number; syncMs?: number } = {};
-  try {
-    saved = JSON.parse(localStorage.getItem(savedKey) || "{}");
-  } catch {}
+  const stored = loadVaultValue(savedKey);
+  const saved = (stored && typeof stored === "object" ? stored : {}) as {
+    minHz?: number; maxHz?: number; syncMs?: number;
+  };
   const filters = shell.createDiv({ cls: "meta-quest-spectral-filters" });
   const numeric = (
     label: string,
@@ -331,13 +330,13 @@ export function mountDesktopSpectralTrail(
     ),
     saveHz = filters.createEl("button", { text: tr("Salvar Hz", "Save Hz") });
   saveHz.onclick = () => {
-    localStorage.setItem(
+    saveVaultValue(
       savedKey,
-      JSON.stringify({
+      {
         minHz: Number(minHz.value) || 0,
         maxHz: Number(maxHz.value) || 18000,
         syncMs: Number(syncOffset.value) || 0,
-      }),
+      },
     );
     saveHz.setText(tr("Hz salvos ✓", "Hz saved ✓"));
     window.setTimeout(() => saveHz.setText(tr("Salvar Hz", "Save Hz")), 1400);
@@ -365,16 +364,16 @@ export function mountDesktopSpectralTrail(
     tr("Projeção cepstral", "Cepstral projection"),
     tr("Perfil cromático derivado", "Derived chroma profile"),
   ];
-  const glCanvas = document.createElement("canvas");
+  const glCanvas = createEl("canvas");
   glCanvas.className = canvas.className;
   glCanvas.width = 960;
   glCanvas.height = 480;
   glCanvas.addClass("is-hidden");
-  const glViewport = document.createElement("div");
+  const glViewport = createDiv();
   glViewport.className = "meta-quest-spectral-viewport";
   canvas.insertAdjacentElement("beforebegin", glViewport);
   glViewport.append(glCanvas, canvas);
-  const labelCanvas = document.createElement("canvas");
+  const labelCanvas = createEl("canvas");
   labelCanvas.width = 960;
   labelCanvas.height = 480;
   labelCanvas.className = "meta-quest-spectral-labels";
@@ -798,7 +797,7 @@ export function mountDesktopSpectralTrail(
         ? 1
         : Math.max(renderEvery, audio.paused && !auto ? 4 : 1);
     if (++rafTick % cadence !== 0) {
-      frame = requestAnimationFrame(render);
+      frame = window.requestAnimationFrame(render);
       return;
     }
     const mediaTime = clockTime();
@@ -860,7 +859,7 @@ export function mountDesktopSpectralTrail(
           ),
         );
       }
-      frame = requestAnimationFrame(render);
+      frame = window.requestAnimationFrame(render);
       return;
     }
     ctx.fillStyle = "#050b13";
@@ -904,7 +903,7 @@ export function mountDesktopSpectralTrail(
         22,
         32,
       );
-      frame = requestAnimationFrame(render);
+      frame = window.requestAnimationFrame(render);
       return;
     }
     for (const point of selected) {
@@ -989,7 +988,7 @@ export function mountDesktopSpectralTrail(
       22,
       32,
     );
-    frame = requestAnimationFrame(render);
+    frame = window.requestAnimationFrame(render);
   }
   const setZoom = (value: number) => {
     const previous = zoom;
@@ -1092,7 +1091,7 @@ export function mountDesktopSpectralTrail(
   const observer = new MutationObserver(() => {
     if (document.contains(shell)) return;
     disposed = true;
-    cancelAnimationFrame(frame);
+    window.cancelAnimationFrame(frame);
     release3d();
     observer.disconnect();
   });

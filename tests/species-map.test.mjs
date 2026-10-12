@@ -3,7 +3,8 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("species map pans on pointer release without rerasterizing during movement", async () => {
-  const source = await readFile(new URL("../src/species-map.ts", import.meta.url), "utf8");
+  const raw = await readFile(new URL("../src/species-map.ts", import.meta.url), "utf8");
+  const source = raw.replace(/\s+/gu, String());
   assert.match(source, /centerAfterDrag/);
   assert.match(source, /setPointerCapture/);
   assert.match(source, /pointermove/);
@@ -11,7 +12,7 @@ test("species map pans on pointer release without rerasterizing during movement"
   assert.match(source, /drag\.moved\|\|Math\.hypot\(finalDx,finalDy\)>7/);
   assert.match(source, /if\(!moved\)/);
   assert.match(source, /c\.center=centerAfterDrag/);
-  assert.match(source, /drag to pan/);
+  assert.match(source, /dragtopan/);
   assert.match(source, /regionLabel/);
   assert.match(source, /address\.state\|\|address\.region\|\|address\.province/);
   assert.match(source, /countryCode:String\(address\.country_code/);
@@ -28,7 +29,7 @@ test("species map pans on pointer release without rerasterizing during movement"
   assert.doesNotMatch(source, /if\(isBrazilView\(c\)\)return rasterBrazil/);
   assert.match(source, /KNOWN_VOCAL_RANGES/);
   assert.match(source, /municipalities/);
-  assert.match(source, /Faixa empírica/);
+  assert.match(source, /Faixaempírica/);
   assert.doesNotMatch(source, /BRAZIL_STATE_NAMES|stateAt\(/);
   assert.match(source, /REGION_PAGE_SIZE=300/);
   assert.match(source, /offset<count&&offset<REGION_RECORD_CAP/);
@@ -38,7 +39,7 @@ test("species map pans on pointer release without rerasterizing during movement"
   const leaflet = await readFile(new URL("../src/leaflet-species-map.ts", import.meta.url), "utf8");
   assert.match(leaflet, /tile\.openstreetmap\.org/);
   assert.match(leaflet, /coordinateCache/);
-  assert.match(leaflet, /localStorage/);
+  assert.match(leaflet, /loadVaultValue/);
   assert.match(leaflet, /moveend zoomend resize/);
   assert.match(leaflet, /recordLayer\.clearLayers/);
   assert.match(leaflet, /AdministrativeBoundary/);

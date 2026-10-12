@@ -65,9 +65,9 @@ test("birth rectangle starts at 5x and settles to 1x without a fixed 42px cap",a
 
 test("youtube clock interpolates between player messages and keeps dense local links",async()=>{
   const [audio,trail,scene]=await Promise.all([readFile(new URL("../src/audio-spectral.ts",import.meta.url),"utf8"),readFile(new URL("../src/desktop-spectral-trail.ts",import.meta.url),"utf8"),readFile(new URL("../src/spectral-scene.ts",import.meta.url),"utf8")]);
-  assert.match(audio,/reportedAt:performance\.now\(\)/);
-  assert.match(audio,/Math\.min\(2,Math\.max/);
-  assert.match(audio,/syncOffsetMs:120/);
+  assert.match(audio,/reportedAt:\s*performance\.now\(\)/);
+  assert.match(audio,/Math\.min\(\s*2,\s*Math\.max/);
+  assert.match(audio,/syncOffsetMs:\s*120/);
   assert.match(trail,/Sincronia ms/);
   assert.match(trail,/const mediaTime\s*=\s*clockTime\(\)/);
   assert.match(scene,/SRGBColorSpace/);

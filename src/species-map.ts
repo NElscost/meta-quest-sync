@@ -1,88 +1,1204 @@
 import { requestUrl, setIcon } from "obsidian";
-import { mountDesktopSpectralTrail, spectralFrequencyRange } from "./desktop-spectral-trail";
-import { AdministrativeBoundary, mountLeafletSpeciesMap } from "./leaflet-species-map";
+import {
+  mountDesktopSpectralTrail,
+  spectralFrequencyRange,
+} from "./desktop-spectral-trail";
+import {
+  AdministrativeBoundary,
+  mountLeafletSpeciesMap,
+} from "./leaflet-species-map";
 import { tr } from "./i18n";
+import { parseSpeciesData, type SpeciesData, type Occurrence, type SpeciesMedia } from "./species-data";
 
-type Config={taxon:string;source:string;center:[number,number];zoom:number;style:string};
-const cache=new Map<string,Promise<{dataUrl:string;name:string;degraded?:boolean}>>();
-const tileCache=new Map<string,Promise<DecodedImage|null>>();
-const taxonCache=new Map<string,Promise<any>>();
-const boundaryCache=new Map<string,Promise<AdministrativeBoundary|null>>();
-const regionResultCache=new Map<string,Promise<any>>();
-function parse(source:string):Config{const c:Config={taxon:"",source:"gbif",center:[-15,-55],zoom:2,style:"classic.point"};for(const line of source.split(/\r?\n/u)){const m=line.match(/^([\w-]+)\s*:\s*(.*?)\s*$/u);if(!m)continue;const k=m[1].toLowerCase(),v=m[2];if(k==="taxon")c.taxon=v.trim().slice(0,180);else if(k==="source")c.source=v.trim().toLowerCase();else if(k==="style")c.style=v.trim().replace(/[^a-z0-9.-]/giu,"")||c.style;else if(k==="zoom")c.zoom=Math.max(1,Math.min(8,parseInt(v,10)||2));else if(k==="center"){const n=v.match(/-?\d+(?:\.\d+)?/gu)?.map(Number);if(n&&n.length>=2&&n.every(Number.isFinite))c.center=[n[0],n[1]];}}return c;}
-function tile(lat:number,lon:number,z:number){const scale=2**z,r=Math.max(-85.0511,Math.min(85.0511,lat))*Math.PI/180;return{x:Math.floor((lon+180)/360*scale),y:Math.floor((1-Math.asinh(Math.tan(r))/Math.PI)/2*scale),scale};}
-type DecodedImage=ImageBitmap|HTMLImageElement;
-async function decodeImage(blob:Blob):Promise<DecodedImage|null>{if(!blob.size)return null;try{return await createImageBitmap(blob);}catch{const dataUrl=await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=()=>reject(reader.error??new Error("Image decode failed"));reader.readAsDataURL(blob);}),image=new Image();image.decoding="async";image.src=dataUrl;await image.decode();return image;}}
-const RETRYABLE_STATUS=new Set([408,425,429,500,502,503,504]);
-const delay=(ms:number)=>new Promise<void>(resolve=>window.setTimeout(resolve,ms));
-async function requestWithRetry(options:Parameters<typeof requestUrl>[0],attempts=3){let lastError:unknown;for(let attempt=0;attempt<attempts;attempt++){try{const response=await requestUrl(options);if(!RETRYABLE_STATUS.has(response.status)||attempt===attempts-1)return response;lastError=new Error(`HTTP ${response.status}`);}catch(error){lastError=error;if(attempt===attempts-1)throw error;}await delay(180*(attempt+1)*(attempt+1));}throw lastError instanceof Error?lastError:new Error(String(lastError));}
-async function bitmap(url:string,optional=false):Promise<DecodedImage|null>{const r=await requestWithRetry({url});if(optional&&r.status===204)return null;if(r.status<200||r.status>=300)throw new Error(`HTTP ${r.status}`);let image;try{image=await decodeImage(new Blob([r.arrayBuffer],{type:String(r.headers["content-type"]||"image/png")}));}catch(error){throw new Error(`Decode failed for ${url} (HTTP ${r.status}, ${r.arrayBuffer.byteLength} bytes): ${error instanceof Error?error.message:String(error)}`);}if(!image&&!optional)throw new Error("Empty image response");return image;}
-function closeImage(image:DecodedImage|null){if(image&&"close" in image)image.close();}
-async function cachedBitmap(url:string,optional=false){if(tileCache.has(url)){const hit=tileCache.get(url)!;tileCache.delete(url);tileCache.set(url,hit);return hit;}const pending=bitmap(url,optional).catch(error=>{tileCache.delete(url);throw error;});tileCache.set(url,pending);while(tileCache.size>72){const [key,old]=tileCache.entries().next().value!;tileCache.delete(key);void old.then(closeImage).catch(()=>undefined);}return pending;}
-function prefetchNeighborTiles(c:Config){const center=tile(c.center[0],c.center[1],c.zoom),positions=[[-2,-1],[-2,0],[2,-1],[2,0],[-1,-2],[0,-2],[1,-2],[-1,1],[0,1],[1,1]],run=()=>{for(const [ox,oy] of positions){const x=((center.x+ox)%center.scale+center.scale)%center.scale,y=Math.max(0,Math.min(center.scale-1,center.y+oy));void cachedBitmap(`https://tile.gbif.org/3857/omt/${c.zoom}/${x}/${y}@1x.png?style=gbif-dark`,true).catch(()=>undefined);}};const idle=(window as any).requestIdleCallback as undefined|((callback:()=>void,options?:{timeout:number})=>number);if(idle)idle(run,{timeout:1200});else window.setTimeout(run,260);}
-async function resolveTaxon(taxon:string){const key=taxon.trim().toLowerCase();if(!taxonCache.has(key))taxonCache.set(key,requestWithRetry({url:"https://api.gbif.org/v1/species/match?name="+encodeURIComponent(taxon)}).then(x=>x.json).catch(error=>{taxonCache.delete(key);throw error;}));return taxonCache.get(key)!;}
-async function clusters(c:Config,key:number,center:ReturnType<typeof tile>){const scale=center.scale,nw=centerAfterDrag(c.center,900,600,c.zoom,900,600),se=centerAfterDrag(c.center,-900,-600,c.zoom,900,600),q=new URLSearchParams({taxonKey:String(key),hasCoordinate:"true",limit:"300",decimalLatitude:Math.min(nw[0],se[0])+","+Math.max(nw[0],se[0])});const response=await requestWithRetry({url:"https://api.gbif.org/v1/occurrence/search?"+q}),groups=new Map<string,{x:number;y:number;count:number}>();for(const r of response.json.results||[]){const lat=Number(r.decimalLatitude),lon=Number(r.decimalLongitude);if(!Number.isFinite(lat)||!Number.isFinite(lon))continue;let tx=(lon+180)/360*scale;while(tx<center.x-1)tx+=scale;while(tx>center.x+2)tx-=scale;const rad=Math.max(-85.0511,Math.min(85.0511,lat))*Math.PI/180,ty=(1-Math.asinh(Math.tan(rad))/Math.PI)/2*scale,x=(tx-(center.x-1))/3*900,y=(ty-(center.y-1))/2*600;if(x<0||x>900||y<0||y>600)continue;const k=Math.floor(x/32)+":"+Math.floor(y/32),g=groups.get(k)||{x:0,y:0,count:0};g.x+=x;g.y+=y;g.count++;groups.set(k,g);}return[...groups.values()].map(g=>({x:g.x/g.count,y:g.y/g.count,count:g.count}));}
-async function raster(c:Config){const key=JSON.stringify(c);if(cache.has(key))return cache.get(key)!;const pending=(async()=>{if(!c.taxon)throw new Error("No taxon configured.");if(c.source!=="gbif")throw new Error(`Unsupported source: ${c.source}`);const taxon=await resolveTaxon(c.taxon) as {usageKey?:number;speciesKey?:number;scientificName?:string},taxonKey=Number(taxon.usageKey??taxon.speciesKey);if(!Number.isFinite(taxonKey))throw new Error(`Taxon not found: ${c.taxon}`);const canvas=document.createElement("canvas");canvas.width=900;canvas.height=600;const ctx=canvas.getContext("2d",{alpha:false});if(!ctx)throw new Error("Canvas unavailable.");ctx.fillStyle="#07111d";ctx.fillRect(0,0,900,600);const center=tile(c.center[0],c.center[1],c.zoom),jobs=[];for(let row=0;row<2;row++)for(let column=0;column<3;column++){const x=((center.x+column-1)%center.scale+center.scale)%center.scale,y=Math.max(0,Math.min(center.scale-1,center.y+row-1)),base=`https://tile.gbif.org/3857/omt/${c.zoom}/${x}/${y}@1x.png?style=gbif-dark`,density=`https://api.gbif.org/v2/map/occurrence/density/${c.zoom}/${x}/${y}@1x.png?srs=EPSG:3857&taxonKey=${taxonKey}&style=${encodeURIComponent(c.style)}`;jobs.push(Promise.all([cachedBitmap(base,true),cachedBitmap(density,true)]).then(([b,d])=>({column,row,b,d})).catch(()=>({column,row,b:null,d:null})));}const [tiles,points]=await Promise.all([Promise.all(jobs),clusters(c,taxonKey,center).catch(()=>[])]),loadedTiles=tiles.filter(tile=>tile.b).length;if(!loadedTiles)throw new Error("Não foi possível baixar os tiles do mapa após 3 tentativas.");for(const t of tiles){if(!t.b)continue;ctx.drawImage(t.b,t.column*300,t.row*300,300,300);if(t.d)ctx.drawImage(t.d,t.column*300,t.row*300,300,300);}for(const p of points){const radius=Math.min(15,4+Math.sqrt(p.count)*2.2);ctx.beginPath();ctx.arc(p.x,p.y,radius,0,Math.PI*2);ctx.fillStyle="rgba(255,169,46,.74)";ctx.fill();ctx.lineWidth=2;ctx.strokeStyle="rgba(255,244,184,.92)";ctx.stroke();if(p.count>2){ctx.fillStyle="#07111d";ctx.font="700 11px system-ui";ctx.textAlign="center";ctx.fillText(String(p.count),p.x,p.y+4);}}ctx.textAlign="left";const name=taxon.scientificName||c.taxon,g=ctx.createLinearGradient(0,0,0,92);g.addColorStop(0,"rgba(3,8,16,.92)");g.addColorStop(1,"rgba(3,8,16,0)");ctx.fillStyle=g;ctx.fillRect(0,0,900,92);ctx.fillStyle="#f3f8ff";ctx.font="700 28px system-ui";ctx.fillText(name,20,38);ctx.fillStyle="#aabbd0";ctx.font="18px system-ui";ctx.fillText("GBIF occurrence regions · select a marker for photos and sounds",20,68);ctx.fillStyle="rgba(3,8,16,.78)";ctx.fillRect(0,566,900,34);ctx.fillStyle="#9badc2";ctx.font="15px system-ui";ctx.textAlign="right";ctx.fillText("Map © OSM · data © GBIF",884,588);prefetchNeighborTiles(c);return{dataUrl:canvas.toDataURL("image/webp",.82),name,degraded:loadedTiles<tiles.length};})();cache.set(key,pending);while(cache.size>10)cache.delete(cache.keys().next().value);try{const result=await pending;if(result.degraded)cache.delete(key);return result;}catch(e){cache.delete(key);throw e;}}
-function centerAfterDrag(center:[number,number],dx:number,dy:number,zoom:number,width:number,height:number):[number,number]{const scale=2**zoom,lat=Math.max(-85.0511,Math.min(85.0511,center[0]))*Math.PI/180;let x=(center[1]+180)/360*scale,y=(1-Math.asinh(Math.tan(lat))/Math.PI)/2*scale;x-=dx/Math.max(1,width)*3;y-=dy/Math.max(1,height)*2;const lon=(((x%scale)+scale)%scale)/scale*360-180,clamped=Math.max(0,Math.min(scale,y)),newLat=Math.atan(Math.sinh(Math.PI*(1-2*clamped/scale)))*180/Math.PI;return[newLat,lon];}
-
-type BoundaryGeometry={type:"Polygon"|"MultiPolygon";coordinates:number[][][]|number[][][][]};
-function boundaryPixel(c:Config,lon:number,lat:number){const center=tile(c.center[0],c.center[1],c.zoom),scale=center.scale,r=Math.max(-85.0511,Math.min(85.0511,lat))*Math.PI/180;let x=(lon+180)/360*scale;while(x<center.x-1)x+=scale;while(x>center.x+2)x-=scale;const y=(1-Math.asinh(Math.tan(r))/Math.PI)/2*scale;return{x:(x-(center.x-1))/3*900,y:(y-(center.y-1))/2*600};}
-function drawBoundary(canvas:HTMLCanvasElement,c:Config,geometry:BoundaryGeometry|null){const ctx=canvas.getContext("2d");if(!ctx)return;ctx.clearRect(0,0,900,600);if(!geometry)return;const polygons=geometry.type==="Polygon"?[geometry.coordinates as number[][][]]:geometry.coordinates as number[][][][];ctx.beginPath();for(const polygon of polygons)for(const ring of polygon){ring.forEach(([lon,lat],index)=>{const p=boundaryPixel(c,lon,lat);index?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y);});ctx.closePath();}ctx.fillStyle="rgba(0,255,0,0.33)";ctx.strokeStyle="rgb(0,170,0)";ctx.lineWidth=3;ctx.fill("evenodd");ctx.stroke();}
-async function loadBoundary(lat:number,lon:number):Promise<AdministrativeBoundary|null>{const key=Math.round(lat*8)+":"+Math.round(lon*8);if(boundaryCache.has(key)){const hit=boundaryCache.get(key)!;boundaryCache.delete(key);boundaryCache.set(key,hit);return hit;}const pending=(async()=>{const q=new URLSearchParams({format:"jsonv2",lat:String(lat),lon:String(lon),zoom:"5",addressdetails:"1",polygon_geojson:"1",polygon_threshold:"0.01"}),response=await requestWithRetry({url:"https://nominatim.openstreetmap.org/reverse?"+q,headers:{"Accept-Language":"en","User-Agent":"MetaQuestSync/0.1"}}),json=response.json||{},geometry=json.geojson,address=json.address||{};if(!geometry||(geometry.type!=="Polygon"&&geometry.type!=="MultiPolygon"))return null;const state=String(address.state||address.region||address.province||"").trim(),country=String(address.country||"").trim();return{geometry,name:state||country||String(json.name||json.display_name||"").split(",")[0],countryCode:String(address.country_code||"").toUpperCase(),country,level:state?("state" as const):("country" as const)};})().catch(error=>{boundaryCache.delete(key);throw error;});boundaryCache.set(key,pending);while(boundaryCache.size>96)boundaryCache.delete(boundaryCache.keys().next().value);return pending;}
-function regionLabel(results:any[],lat:number,lon:number){const counts=new Map<string,number>();for(const item of results){const state=String(item.stateProvince||item.locality||"").trim(),country=String(item.country||"").trim(),name=state&&country?state+", "+country:state||country;if(name)counts.set(name,(counts.get(name)||0)+1);}return [...counts].sort((a,b)=>b[1]-a[1])[0]?.[0]||lat.toFixed(2)+"°, "+lon.toFixed(2)+"°";}
-function mapCoordinate(c:Config,u:number,v:number){const center=tile(c.center[0],c.center[1],c.zoom),wx=center.x-1+Math.max(0,Math.min(1,u))*3,wy=center.y-1+Math.max(0,Math.min(1,v))*2;return{lon:wx/center.scale*360-180,lat:Math.atan(Math.sinh(Math.PI*(1-2*wy/center.scale)))*180/Math.PI};}
-const REGION_PAGE_SIZE=300,REGION_RECORD_CAP=9000;
-async function fetchRegionAt(c:Config,lat:number,lon:number,region:AdministrativeBoundary|null=null){
-  const radius=Math.max(.35,55/(2**c.zoom));
-  const match=await requestWithRetry({url:`https://api.gbif.org/v1/species/match?name=${encodeURIComponent(c.taxon)}`}),key=Number(match.json.usageKey??match.json.speciesKey),scientificName=String(match.json.scientificName||c.taxon);
-  const load=async(type:string)=>{const base:Record<string,string>={taxon_key:String(key),has_coordinate:"true",media_type:type};if(region?.countryCode)base.country=region.countryCode;if(region?.level==="state"&&region.name)base.state_province=region.name;if(!region?.name){base.decimal_latitude=`${Math.max(-89.9,lat-radius)},${Math.min(89.9,lat+radius)}`;base.decimal_longitude=`${Math.max(-179.9,lon-radius)},${Math.min(179.9,lon+radius)}`;}const results:any[]=[];let offset=0,count=0;do{const params=new URLSearchParams({...base,limit:String(REGION_PAGE_SIZE),offset:String(offset)}),page=(await requestWithRetry({url:"https://api.gbif.org/v1/occurrence/search?"+params})).json;count=Number(page.count)||0;results.push(...(page.results||[]));if(!page.results?.length)break;offset+=REGION_PAGE_SIZE;}while(offset<count&&offset<REGION_RECORD_CAP);return{count,results,truncated:offset<count};};
-  const [photosJson,soundsJson]=await Promise.all([load("StillImage"),load("Sound")]),all=[...(photosJson.results||[]),...(soundsJson.results||[])];
-  const municipality=(record:any)=>String(record.municipality||record.county||record.locality||"").trim();
-  const collect=(json:any,type:string,limit:number)=>{const output:any[]=[];for(const record of json.results||[])for(const media of record.media||[])if(media.type===type&&output.length<limit)output.push({...media,municipality:municipality(record),place:record.locality||record.stateProvince||record.country||""});return output;};
-  const counts=new Map<string,{name:string;photos:number;sounds:number}>();for(const record of all){const name=municipality(record);if(!name)continue;const item=counts.get(name)||{name,photos:0,sounds:0};for(const media of record.media||[]){if(media.type==="StillImage")item.photos++;if(media.type==="Sound")item.sounds++;}counts.set(name,item);}
-  const locationName=region?.name?[region.name,region.country].filter(Boolean).join(", "):regionLabel(all,lat,lon);return{taxon:scientificName,name:locationName,lat,lon,count:Math.max(photosJson.count||0,soundsJson.count||0),photos:collect(photosJson,"StillImage",120),sounds:collect(soundsJson,"Sound",240),municipalities:[...counts.values()].sort((a,b)=>(b.photos+b.sounds)-(a.photos+a.sounds)).slice(0,120),truncated:Boolean(photosJson.truncated||soundsJson.truncated)};
-}
-async function fetchRegion(c:Config,u:number,v:number,region:AdministrativeBoundary|null=null){const point=mapCoordinate(c,u,v);return fetchRegionAt(c,point.lat,point.lon,region);}
-async function loadRegion(c:Config,u:number,v:number,region:AdministrativeBoundary|null=null){const key=JSON.stringify(c)+":"+Math.round(u*40)+":"+Math.round(v*40)+":"+(region?.name||"")+":"+(region?.countryCode||"");if(regionResultCache.has(key)){const hit=regionResultCache.get(key)!;regionResultCache.delete(key);regionResultCache.set(key,hit);return hit;}const pending=fetchRegion(c,u,v,region).catch(error=>{regionResultCache.delete(key);throw error;});regionResultCache.set(key,pending);while(regionResultCache.size>24)regionResultCache.delete(regionResultCache.keys().next().value);return pending;}
-async function loadRegionAt(c:Config,lat:number,lon:number,region:AdministrativeBoundary|null=null){const key=JSON.stringify(c)+":"+Math.round(lat*20)+":"+Math.round(lon*20)+":"+(region?.name||"")+":"+(region?.countryCode||"");if(regionResultCache.has(key)){const hit=regionResultCache.get(key)!;regionResultCache.delete(key);regionResultCache.set(key,hit);return hit;}const pending=fetchRegionAt(c,lat,lon,region).catch(error=>{regionResultCache.delete(key);throw error;});regionResultCache.set(key,pending);while(regionResultCache.size>24)regionResultCache.delete(regionResultCache.keys().next().value);return pending;}
-async function optimizedImageUrl(url:string,maxWidth=1920,maxHeight=1080):Promise<string>{const response=await requestUrl({url});if(response.status<200||response.status>=300)throw new Error(`Image HTTP ${response.status}`);const blob=new Blob([response.arrayBuffer],{type:String(response.headers["content-type"]||"image/jpeg")}),source=await createImageBitmap(blob);try{const scale=Math.min(1,maxWidth/source.width,maxHeight/source.height);if(scale>=1)return URL.createObjectURL(blob);const width=Math.max(1,Math.round(source.width*scale)),height=Math.max(1,Math.round(source.height*scale)),resized=await createImageBitmap(source,{resizeWidth:width,resizeHeight:height,resizeQuality:"high"}),canvas=document.createElement("canvas");canvas.width=width;canvas.height=height;canvas.getContext("2d")?.drawImage(resized,0,0);resized.close();const output=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(new Error("Image resize failed")),"image/webp",.84));return URL.createObjectURL(output);}finally{source.close();}}
-
-
-type SpeciesMapOptions={analyzeAudio?:(url:string)=>Promise<unknown>};
-const KNOWN_VOCAL_RANGES:Record<string,{low:[number,number];high:[number,number];note:string}>={"pitangus sulphuratus":{low:[2600,2800],high:[3500,4200],note:"Faixa de referência; ruído urbano, clima e geografia podem deslocar os valores observados."}};
-function showRegion(container:HTMLElement,r:any,options:SpeciesMapOptions){
-  let panel=container.querySelector<HTMLElement>(".meta-quest-species-region");if(!panel)panel=container.createDiv({cls:"meta-quest-species-region"});panel.empty();
-  panel.createEl("strong",{text:`${r.name} · ${r.count.toLocaleString()} records`});
-  const dashboard=panel.createDiv({cls:"meta-quest-species-dashboard"}),known=KNOWN_VOCAL_RANGES[String(r.taxon||"").toLowerCase().match(/^[a-z]+\s+[a-z]+/)?.[0]||""],range=dashboard.createDiv({cls:"meta-quest-species-range"});
-  range.createEl("strong",{text:"Perfil acústico · "+r.taxon});range.createDiv({text:known?`mínima típica ${(known.low[0]/1000).toFixed(1)}–${(known.low[1]/1000).toFixed(1)} kHz · máxima típica ${(known.high[0]/1000).toFixed(1)}–${(known.high[1]/1000).toFixed(1)} kHz`:"Faixa de referência ainda não catalogada; estimando pelas gravações disponíveis…"});
-  if(known)range.createEl("small",{text:known.note});const empirical=range.createDiv({cls:"meta-quest-species-empirical",text:"Faixa empírica: analisando gravações…"});
-  const municipalities=dashboard.createDiv({cls:"meta-quest-species-municipalities"});municipalities.createEl("strong",{text:"Municípios / localidades"});const chips=municipalities.createDiv({cls:"meta-quest-species-chips"});
-  let selected="";const mediaHost=panel.createDiv({cls:"meta-quest-species-media"});
-  const renderMedia=()=>{mediaHost.empty();const photos=selected?r.photos.filter((x:any)=>x.municipality===selected):r.photos.slice(0,6),sounds=selected?r.sounds.filter((x:any)=>x.municipality===selected):r.sounds.slice(0,24);const gallery=mediaHost.createDiv({cls:"meta-quest-species-gallery"});for(const media of photos){const a=gallery.createEl("a",{href:media.references||media.identifier});a.target="_blank";const image=a.createEl("img",{attr:{loading:"lazy",alt:media.creator||"Species photo"}});void optimizedImageUrl(media.identifier,1280,720).then(url=>{image.src=url;image.addEventListener("load",()=>URL.revokeObjectURL(url),{once:true});}).catch(()=>image.alt="Species image unavailable");}for(const media of sounds){const row=mediaHost.createDiv({cls:"meta-quest-species-sound"});row.createSpan({text:(media.creator||"GBIF recording")+(media.municipality?" · "+media.municipality:"")});const player=row.createEl("audio",{attr:{src:media.identifier,controls:"",preload:"metadata"}}),trailButton=row.createEl("button",{text:"Rastro 3D",attr:{"aria-label":"Abrir identidade espectral em 3D"}}),frequency=row.createSpan({cls:"meta-quest-species-frequency",text:"Faixa vocal: analisar gravação"});let trail:HTMLElement|null=null;trailButton.onclick=()=>{if(trail){trail.remove();trail=null;trailButton.setText("Rastro 3D");return;}for(const other of Array.from(document.querySelectorAll<HTMLAudioElement>("audio")))if(other!==player&&!other.paused)other.pause();if(player.paused)void player.play().catch(()=>undefined);trail=mountDesktopSpectralTrail(player,row,()=>{if(!options.analyzeAudio)throw new Error("Analisador espectral indisponível.");return options.analyzeAudio(media.identifier);},{storageKey:"species:"+media.identifier,onFrequencyRange:value=>frequency.setText("Faixa vocal estimada: "+value.minHz.toLocaleString()+"–"+value.maxHz.toLocaleString()+" Hz")});trailButton.setText("Fechar 3D");};}if(!photos.length&&!sounds.length)mediaHost.createDiv({text:"Nenhuma mídia encontrada para esta localidade na amostra atual."});};
-  const all=chips.createEl("button",{text:"Todos"});all.addClass("is-active");all.onclick=()=>{selected="";for(const x of Array.from(chips.querySelectorAll("button")))x.removeClass("is-active");all.addClass("is-active");renderMedia();};for(const item of r.municipalities||[]){const button=chips.createEl("button",{text:`${item.name} · 📷 ${item.photos} · ♪ ${item.sounds}`});button.onclick=()=>{selected=item.name;for(const x of Array.from(chips.querySelectorAll("button")))x.removeClass("is-active");button.addClass("is-active");renderMedia();};}renderMedia();
-  if(options.analyzeAudio&&r.sounds?.length)void Promise.allSettled(r.sounds.slice(0,3).map((x:any)=>options.analyzeAudio!(x.identifier))).then(results=>{const ranges=results.flatMap(x=>x.status==="fulfilled"?(spectralFrequencyRange(x.value)?[spectralFrequencyRange(x.value)!]:[]):[]);if(ranges.length)empirical.setText(`Faixa empírica (${ranges.length} gravações): ${Math.min(...ranges.map(x=>x.minHz)).toLocaleString()}–${Math.max(...ranges.map(x=>x.maxHz)).toLocaleString()} Hz`);else empirical.setText("Faixa empírica indisponível para esta amostra.");});else empirical.setText("Faixa empírica disponível ao analisar uma gravação.");
-}
-
-async function renderRasterSpeciesMap(source:string,container:HTMLElement,options:SpeciesMapOptions={}){const c=parse(source);container.addClass("meta-quest-species-map");const bar=container.createDiv({cls:"meta-quest-species-map-toolbar"}),status=bar.createSpan({text:"Loading GBIF occurrence map…"}),minus=bar.createEl("button",{text:"−",attr:{"aria-label":"Zoom out"}}),plus=bar.createEl("button",{text:"+",attr:{"aria-label":"Zoom in"}}),viewport=container.createDiv({cls:"meta-quest-species-map-viewport"}),image=viewport.createEl("img",{cls:"meta-quest-species-map-image",attr:{alt:"Species occurrence map",draggable:"false"}}),boundary=viewport.createEl("canvas",{cls:"meta-quest-species-boundary",attr:{width:"900",height:"600","aria-hidden":"true"}});setIcon(minus,"zoom-out");setIcon(plus,"zoom-in");image.addEventListener("click",(event)=>{event.preventDefault();event.stopImmediatePropagation();});let generation=0,selectedBoundary:BoundaryGeometry|null=null,hoveredRegion:null|({u:number;v:number}&AdministrativeBoundary)=null,hoverGeneration=0,hoverTimer:number|null=null;const settleViewport=()=>{viewport.removeClass("is-zooming");viewport.setCssProps({"--map-shift-x":"0px","--map-shift-y":"0px","--map-scale":"1","--map-origin-x":"50%","--map-origin-y":"50%"});};const update=async()=>{const current=++generation;boundary.addClass("is-hidden");status.setText("Loading GBIF occurrence map…");try{const result=await raster(c);if(current!==generation)return;const prepared=new Image();prepared.decoding="async";prepared.src=result.dataUrl;try{await prepared.decode();}catch{}if(current!==generation)return;image.src=result.dataUrl;image.alt=`Occurrence map for ${result.name}`;settleViewport();drawBoundary(boundary,c,selectedBoundary);boundary.removeClass("is-hidden");status.setText(result.degraded?`${result.name} · mapa parcial; mova para tentar novamente`:`${result.name} · zoom ${c.zoom} · drag to pan`);}catch(e){if(current===generation){settleViewport();boundary.removeClass("is-hidden");drawBoundary(boundary,c,selectedBoundary);status.setText(`Map unavailable: ${e instanceof Error?e.message:String(e)}`);}}};let navigationTimer:number|null=null;const scheduleUpdate=()=>{if(navigationTimer!==null)window.clearTimeout(navigationTimer);navigationTimer=window.setTimeout(()=>{navigationTimer=null;void update();},70);};const zoomTo=(next:number,originX=50,originY=50)=>{next=Math.max(1,Math.min(8,next));if(next===c.zoom)return;const scale=next>c.zoom?1.72:.62;c.zoom=next;viewport.setCssProps({"--map-origin-x":`${originX}%`,"--map-origin-y":`${originY}%`,"--map-scale":String(scale)});viewport.addClass("is-zooming");boundary.addClass("is-hidden");scheduleUpdate();};minus.onclick=()=>zoomTo(c.zoom-1);plus.onclick=()=>zoomTo(c.zoom+1);let drag:null|{id:number;x:number;y:number;dx:number;dy:number;moved:boolean}=null;image.addEventListener("pointerdown",(event)=>{if(event.button!==0&&event.pointerType==="mouse")return;drag={id:event.pointerId,x:event.clientX,y:event.clientY,dx:0,dy:0,moved:false};image.setPointerCapture(event.pointerId);image.addClass("is-dragging");event.preventDefault();event.stopPropagation();});image.addEventListener("pointermove",(event)=>{if(!drag){if(event.pointerType!=="mouse")return;const bounds=image.getBoundingClientRect(),u=(event.clientX-bounds.left)/bounds.width,v=(event.clientY-bounds.top)/bounds.height,point=mapCoordinate(c,u,v),request=++hoverGeneration;if(hoverTimer!==null)window.clearTimeout(hoverTimer);hoverTimer=window.setTimeout(()=>{void loadBoundary(point.lat,point.lon).then(region=>{if(request!==hoverGeneration)return;hoveredRegion=region?{u,v,...region}:null;drawBoundary(boundary,c,region?.geometry??selectedBoundary);if(hoveredRegion?.name)status.setText(hoveredRegion.name+" · click to select");});},90);return;}if(event.pointerId!==drag.id)return;drag.dx=event.clientX-drag.x;drag.dy=event.clientY-drag.y;if(Math.hypot(drag.dx,drag.dy)>7)drag.moved=true;viewport.setCssProps({"--map-shift-x":`${drag.dx}px`,"--map-shift-y":`${drag.dy}px`,"--map-scale":"1.025"});event.preventDefault();});const finish=(event:PointerEvent)=>{if(!drag||event.pointerId!==drag.id)return;event.preventDefault();event.stopPropagation();const finalDx=event.clientX-drag.x,finalDy=event.clientY-drag.y,moved=drag.moved||Math.hypot(finalDx,finalDy)>7,dx=moved?finalDx:drag.dx,dy=moved?finalDy:drag.dy;drag=null;image.removeClass("is-dragging");if(!moved){viewport.setCssProps({"--map-shift-x":"0px","--map-shift-y":"0px","--map-scale":"1"});const bounds=image.getBoundingClientRect();let marker=viewport.querySelector<HTMLElement>(".meta-quest-species-selection");if(!marker)marker=viewport.createSpan({cls:"meta-quest-species-selection"});marker.setCssProps({"--marker-x":((event.clientX-bounds.left)/bounds.width*100)+"%","--marker-y":((event.clientY-bounds.top)/bounds.height*100)+"%"});status.setText("Loading regional photos and sounds…");const clickU=(event.clientX-bounds.left)/bounds.width,clickV=(event.clientY-bounds.top)/bounds.height,selected=hoveredRegion;void loadRegion(c,selected?.u??clickU,selected?.v??clickV,selected).then((r)=>{showRegion(container,r,options);void loadBoundary(r.lat,r.lon).then((region)=>{selectedBoundary=region?.geometry||null;drawBoundary(boundary,c,selectedBoundary);});status.setText(`${r.name} · ${r.count.toLocaleString()} records`);}).catch((e)=>status.setText(`Region unavailable: ${e instanceof Error?e.message:String(e)}`));return;}c.center=centerAfterDrag(c.center,dx,dy,c.zoom,image.clientWidth,image.clientHeight);scheduleUpdate();};image.addEventListener("pointerup",finish);image.addEventListener("pointercancel",finish);image.addEventListener("pointerleave",()=>{hoverGeneration++;hoveredRegion=null;if(hoverTimer!==null)window.clearTimeout(hoverTimer);drawBoundary(boundary,c,selectedBoundary);});image.addEventListener("wheel",event=>{event.preventDefault();const bounds=image.getBoundingClientRect(),originX=(event.clientX-bounds.left)/bounds.width*100,originY=(event.clientY-bounds.top)/bounds.height*100;zoomTo(c.zoom+(event.deltaY<0?1:-1),originX,originY);},{passive:false});await update();}
-
-export async function renderSpeciesMap(source:string,container:HTMLElement,options:SpeciesMapOptions={}){const c=parse(source);try{await mountLeafletSpeciesMap(container,{taxon:c.taxon,center:c.center,zoom:c.zoom},{resolveBoundary:async(lat,lon)=>(await loadBoundary(lat,lon))??{geometry:null,name:""},selectRegion:async(lat,lon,region)=>{const result=await loadRegionAt(c,lat,lon,region);showRegion(container,result,options);return{name:result.name,count:result.count};}});}catch(error){(window as any).__metaQuestVectorMapError=error instanceof Error?(error.stack||error.message):String(error);container.empty();console.warn("Global species map unavailable; using raster fallback",error);await renderRasterSpeciesMap(source,container,options);}}
-
-export function renderIucnStatus(root:HTMLElement){
-  const cats=["EX","EW","CR","EN","VU","NT","LC"];
-  for(const el of Array.from(root.querySelectorAll<HTMLElement>("p,blockquote p"))){
-    const text=(el.textContent||"").replace(/\s+/g," ").trim();
-    if(!/IUCN\s*3\.1\s*:/i.test(text)||el.querySelector(".meta-quest-iucn"))continue;
-    const marked=el.querySelector("mark")?.textContent?.trim().toUpperCase();
-    const active=marked&&cats.includes(marked)?marked:"LC";
-    const scale=document.createElement("div");scale.className="meta-quest-iucn meta-quest-iucn-inline";
-    const title=document.createElement("div");title.className="meta-quest-iucn-title";
-    title.textContent=active==="LC"?tr("Pouco Preocupante","Least Concern"):"IUCN "+active;
-    const row=document.createElement("div");row.className="meta-quest-iucn-row";
-    for(const c of cats){const x=document.createElement("span");x.className=`meta-quest-iucn-category${c===active?" is-active":""}`;x.textContent=c;row.append(x)}
-    const labels=document.createElement("div");labels.className="meta-quest-iucn-labels";
-    for(const label of [tr("Extinta","Extinct"),tr("Ameaçada","Threatened"),tr("Pouco preocupante","Least concern")]){
-      const item=document.createElement("span");item.textContent=label;labels.append(item);
+type Config = {
+  taxon: string;
+  source: string;
+  center: [number, number];
+  zoom: number;
+  style: string;
+};
+const cache = new Map<
+  string,
+  Promise<{ dataUrl: string; name: string; degraded?: boolean }>
+>();
+const tileCache = new Map<string, Promise<DecodedImage | null>>();
+const taxonCache = new Map<string, Promise<SpeciesData>>();
+const boundaryCache = new Map<string, Promise<AdministrativeBoundary | null>>();
+type RegionResult = Awaited<ReturnType<typeof fetchRegionAt>>;
+type RegionalMedia = SpeciesMedia & { municipality: string; place: string };
+const regionResultCache = new Map<string, Promise<RegionResult>>();
+function parse(source: string): Config {
+  const c: Config = {
+    taxon: "",
+    source: "gbif",
+    center: [-15, -55],
+    zoom: 2,
+    style: "classic.point",
+  };
+  for (const line of source.split(/\r?\n/u)) {
+    const m = line.match(/^([\w-]+)\s*:\s*(.*?)\s*$/u);
+    if (!m) continue;
+    const k = m[1].toLowerCase(),
+      v = m[2];
+    if (k === "taxon") c.taxon = v.trim().slice(0, 180);
+    else if (k === "source") c.source = v.trim().toLowerCase();
+    else if (k === "style")
+      c.style = v.trim().replace(/[^a-z0-9.-]/giu, "") || c.style;
+    else if (k === "zoom")
+      c.zoom = Math.max(1, Math.min(8, parseInt(v, 10) || 2));
+    else if (k === "center") {
+      const n = v.match(/-?\d+(?:\.\d+)?/gu)?.map(Number);
+      if (n && n.length >= 2 && n.every(Number.isFinite))
+        c.center = [n[0], n[1]];
     }
-    scale.append(title,row,labels);el.replaceWith(scale);
+  }
+  return c;
+}
+function tile(lat: number, lon: number, z: number) {
+  const scale = 2 ** z,
+    r = (Math.max(-85.0511, Math.min(85.0511, lat)) * Math.PI) / 180;
+  return {
+    x: Math.floor(((lon + 180) / 360) * scale),
+    y: Math.floor(((1 - Math.asinh(Math.tan(r)) / Math.PI) / 2) * scale),
+    scale,
+  };
+}
+type DecodedImage = ImageBitmap | HTMLImageElement;
+async function decodeImage(blob: Blob): Promise<DecodedImage | null> {
+  if (!blob.size) return null;
+  try {
+    return await createImageBitmap(blob);
+  } catch {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => typeof reader.result === "string"
+          ? resolve(reader.result) : reject(new Error("Image decode returned non-text data"));
+        reader.onerror = () =>
+          reject(reader.error ?? new Error("Image decode failed"));
+        reader.readAsDataURL(blob);
+      }),
+      image = new Image();
+    image.decoding = "async";
+    image.src = dataUrl;
+    await image.decode();
+    return image;
+  }
+}
+const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
+const delay = (ms: number) =>
+  new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+async function requestWithRetry(
+  options: Parameters<typeof requestUrl>[0],
+  attempts = 3,
+) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      const response = await requestUrl(options);
+      if (!RETRYABLE_STATUS.has(response.status) || attempt === attempts - 1)
+        return { status: response.status, headers: response.headers, arrayBuffer: response.arrayBuffer,
+          text: response.text, get json() { return parseSpeciesData(response.json as unknown); } };
+      lastError = new Error(`HTTP ${response.status}`);
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts - 1) throw error;
+    }
+    await delay(180 * (attempt + 1) * (attempt + 1));
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+async function bitmap(
+  url: string,
+  optional = false,
+): Promise<DecodedImage | null> {
+  const r = await requestWithRetry({ url });
+  if (optional && r.status === 204) return null;
+  if (r.status < 200 || r.status >= 300) throw new Error(`HTTP ${r.status}`);
+  let image;
+  try {
+    image = await decodeImage(
+      new Blob([r.arrayBuffer], {
+        type: String(r.headers["content-type"] || "image/png"),
+      }),
+    );
+  } catch (error) {
+    throw new Error(
+      `Decode failed for ${url} (HTTP ${r.status}, ${r.arrayBuffer.byteLength} bytes): ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (!image && !optional) throw new Error("Empty image response");
+  return image;
+}
+function closeImage(image: DecodedImage | null) {
+  if (image && "close" in image) image.close();
+}
+async function cachedBitmap(url: string, optional = false) {
+  if (tileCache.has(url)) {
+    const hit = tileCache.get(url)!;
+    tileCache.delete(url);
+    tileCache.set(url, hit);
+    return hit;
+  }
+  const pending = bitmap(url, optional).catch((error) => {
+    tileCache.delete(url);
+    throw error;
+  });
+  tileCache.set(url, pending);
+  while (tileCache.size > 72) {
+    const [key, old] = tileCache.entries().next().value!;
+    tileCache.delete(key);
+    void old.then(closeImage).catch(() => undefined);
+  }
+  return pending;
+}
+function prefetchNeighborTiles(c: Config) {
+  const center = tile(c.center[0], c.center[1], c.zoom),
+    positions = [
+      [-2, -1],
+      [-2, 0],
+      [2, -1],
+      [2, 0],
+      [-1, -2],
+      [0, -2],
+      [1, -2],
+      [-1, 1],
+      [0, 1],
+      [1, 1],
+    ],
+    run = () => {
+      for (const [ox, oy] of positions) {
+        const x =
+            (((center.x + ox) % center.scale) + center.scale) % center.scale,
+          y = Math.max(0, Math.min(center.scale - 1, center.y + oy));
+        void cachedBitmap(
+          `https://tile.gbif.org/3857/omt/${c.zoom}/${x}/${y}@1x.png?style=gbif-dark`,
+          true,
+        ).catch(() => undefined);
+      }
+    };
+  if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(run, { timeout: 1200 });
+  else window.setTimeout(run, 260);
+}
+async function resolveTaxon(taxon: string) {
+  const key = taxon.trim().toLowerCase();
+  if (!taxonCache.has(key))
+    taxonCache.set(
+      key,
+      requestWithRetry({
+        url:
+          "https://api.gbif.org/v1/species/match?name=" +
+          encodeURIComponent(taxon),
+      })
+        .then((x) => x.json)
+        .catch((error) => {
+          taxonCache.delete(key);
+          throw error;
+        }),
+    );
+  return taxonCache.get(key)!;
+}
+async function clusters(
+  c: Config,
+  key: number,
+  center: ReturnType<typeof tile>,
+) {
+  const scale = center.scale,
+    nw = centerAfterDrag(c.center, 900, 600, c.zoom, 900, 600),
+    se = centerAfterDrag(c.center, -900, -600, c.zoom, 900, 600),
+    q = new URLSearchParams({
+      taxonKey: String(key),
+      hasCoordinate: "true",
+      limit: "300",
+      decimalLatitude: Math.min(nw[0], se[0]) + "," + Math.max(nw[0], se[0]),
+    });
+  const response = await requestWithRetry({
+      url: "https://api.gbif.org/v1/occurrence/search?" + q.toString(),
+    }),
+    groups = new Map<string, { x: number; y: number; count: number }>();
+  for (const r of response.json.results || []) {
+    const lat = Number(r.decimalLatitude),
+      lon = Number(r.decimalLongitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    let tx = ((lon + 180) / 360) * scale;
+    while (tx < center.x - 1) tx += scale;
+    while (tx > center.x + 2) tx -= scale;
+    const rad = (Math.max(-85.0511, Math.min(85.0511, lat)) * Math.PI) / 180,
+      ty = ((1 - Math.asinh(Math.tan(rad)) / Math.PI) / 2) * scale,
+      x = ((tx - (center.x - 1)) / 3) * 900,
+      y = ((ty - (center.y - 1)) / 2) * 600;
+    if (x < 0 || x > 900 || y < 0 || y > 600) continue;
+    const k = Math.floor(x / 32) + ":" + Math.floor(y / 32),
+      g = groups.get(k) || { x: 0, y: 0, count: 0 };
+    g.x += x;
+    g.y += y;
+    g.count++;
+    groups.set(k, g);
+  }
+  return [...groups.values()].map((g) => ({
+    x: g.x / g.count,
+    y: g.y / g.count,
+    count: g.count,
+  }));
+}
+async function raster(c: Config) {
+  const key = JSON.stringify(c);
+  if (cache.has(key)) return cache.get(key)!;
+  const pending = (async () => {
+    if (!c.taxon) throw new Error("No taxon configured.");
+    if (c.source !== "gbif") throw new Error(`Unsupported source: ${c.source}`);
+    const taxon = (await resolveTaxon(c.taxon)) as {
+        usageKey?: number;
+        speciesKey?: number;
+        scientificName?: string;
+      },
+      taxonKey = Number(taxon.usageKey ?? taxon.speciesKey);
+    if (!Number.isFinite(taxonKey))
+      throw new Error(`Taxon not found: ${c.taxon}`);
+    const canvas = createEl("canvas");
+    canvas.width = 900;
+    canvas.height = 600;
+    const ctx = canvas.getContext("2d", { alpha: false });
+    if (!ctx) throw new Error("Canvas unavailable.");
+    ctx.fillStyle = "#07111d";
+    ctx.fillRect(0, 0, 900, 600);
+    const center = tile(c.center[0], c.center[1], c.zoom),
+      jobs = [];
+    for (let row = 0; row < 2; row++)
+      for (let column = 0; column < 3; column++) {
+        const x =
+            (((center.x + column - 1) % center.scale) + center.scale) %
+            center.scale,
+          y = Math.max(0, Math.min(center.scale - 1, center.y + row - 1)),
+          base = `https://tile.gbif.org/3857/omt/${c.zoom}/${x}/${y}@1x.png?style=gbif-dark`,
+          density = `https://api.gbif.org/v2/map/occurrence/density/${c.zoom}/${x}/${y}@1x.png?srs=EPSG:3857&taxonKey=${taxonKey}&style=${encodeURIComponent(c.style)}`;
+        jobs.push(
+          Promise.all([cachedBitmap(base, true), cachedBitmap(density, true)])
+            .then(([b, d]) => ({ column, row, b, d }))
+            .catch(() => ({ column, row, b: null, d: null })),
+        );
+      }
+    const [tiles, points] = await Promise.all([
+        Promise.all(jobs),
+        clusters(c, taxonKey, center).catch(() => []),
+      ]),
+      loadedTiles = tiles.filter((tile) => tile.b).length;
+    if (!loadedTiles)
+      throw new Error(
+        "Não foi possível baixar os tiles do mapa após 3 tentativas.",
+      );
+    for (const t of tiles) {
+      if (!t.b) continue;
+      ctx.drawImage(t.b, t.column * 300, t.row * 300, 300, 300);
+      if (t.d) ctx.drawImage(t.d, t.column * 300, t.row * 300, 300, 300);
+    }
+    for (const p of points) {
+      const radius = Math.min(15, 4 + Math.sqrt(p.count) * 2.2);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,169,46,.74)";
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "rgba(255,244,184,.92)";
+      ctx.stroke();
+      if (p.count > 2) {
+        ctx.fillStyle = "#07111d";
+        ctx.font = "700 11px system-ui";
+        ctx.textAlign = "center";
+        ctx.fillText(String(p.count), p.x, p.y + 4);
+      }
+    }
+    ctx.textAlign = "left";
+    const name = taxon.scientificName || c.taxon,
+      g = ctx.createLinearGradient(0, 0, 0, 92);
+    g.addColorStop(0, "rgba(3,8,16,.92)");
+    g.addColorStop(1, "rgba(3,8,16,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 900, 92);
+    ctx.fillStyle = "#f3f8ff";
+    ctx.font = "700 28px system-ui";
+    ctx.fillText(name, 20, 38);
+    ctx.fillStyle = "#aabbd0";
+    ctx.font = "18px system-ui";
+    ctx.fillText(
+      "GBIF occurrence regions · select a marker for photos and sounds",
+      20,
+      68,
+    );
+    ctx.fillStyle = "rgba(3,8,16,.78)";
+    ctx.fillRect(0, 566, 900, 34);
+    ctx.fillStyle = "#9badc2";
+    ctx.font = "15px system-ui";
+    ctx.textAlign = "right";
+    ctx.fillText("Map © OSM · data © GBIF", 884, 588);
+    prefetchNeighborTiles(c);
+    return {
+      dataUrl: canvas.toDataURL("image/webp", 0.82),
+      name,
+      degraded: loadedTiles < tiles.length,
+    };
+  })();
+  cache.set(key, pending);
+  while (cache.size > 10) cache.delete(cache.keys().next().value!);
+  try {
+    const result = await pending;
+    if (result.degraded) cache.delete(key);
+    return result;
+  } catch (e) {
+    cache.delete(key);
+    throw e;
+  }
+}
+function centerAfterDrag(
+  center: [number, number],
+  dx: number,
+  dy: number,
+  zoom: number,
+  width: number,
+  height: number,
+): [number, number] {
+  const scale = 2 ** zoom,
+    lat = (Math.max(-85.0511, Math.min(85.0511, center[0])) * Math.PI) / 180;
+  let x = ((center[1] + 180) / 360) * scale,
+    y = ((1 - Math.asinh(Math.tan(lat)) / Math.PI) / 2) * scale;
+  x -= (dx / Math.max(1, width)) * 3;
+  y -= (dy / Math.max(1, height)) * 2;
+  const lon = ((((x % scale) + scale) % scale) / scale) * 360 - 180,
+    clamped = Math.max(0, Math.min(scale, y)),
+    newLat =
+      (Math.atan(Math.sinh(Math.PI * (1 - (2 * clamped) / scale))) * 180) /
+      Math.PI;
+  return [newLat, lon];
+}
+
+type BoundaryGeometry = {
+  type: "Polygon" | "MultiPolygon";
+  coordinates: number[][][] | number[][][][];
+};
+function boundaryPixel(c: Config, lon: number, lat: number) {
+  const center = tile(c.center[0], c.center[1], c.zoom),
+    scale = center.scale,
+    r = (Math.max(-85.0511, Math.min(85.0511, lat)) * Math.PI) / 180;
+  let x = ((lon + 180) / 360) * scale;
+  while (x < center.x - 1) x += scale;
+  while (x > center.x + 2) x -= scale;
+  const y = ((1 - Math.asinh(Math.tan(r)) / Math.PI) / 2) * scale;
+  return {
+    x: ((x - (center.x - 1)) / 3) * 900,
+    y: ((y - (center.y - 1)) / 2) * 600,
+  };
+}
+function drawBoundary(
+  canvas: HTMLCanvasElement,
+  c: Config,
+  geometry: BoundaryGeometry | null,
+) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.clearRect(0, 0, 900, 600);
+  if (!geometry) return;
+  const polygons =
+    geometry.type === "Polygon"
+      ? [geometry.coordinates as number[][][]]
+      : (geometry.coordinates as number[][][][]);
+  ctx.beginPath();
+  for (const polygon of polygons)
+    for (const ring of polygon) {
+      ring.forEach(([lon, lat], index) => {
+        const p = boundaryPixel(c, lon, lat);
+        index ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y);
+      });
+      ctx.closePath();
+    }
+  ctx.fillStyle = "rgba(0,255,0,0.33)";
+  ctx.strokeStyle = "rgb(0,170,0)";
+  ctx.lineWidth = 3;
+  ctx.fill("evenodd");
+  ctx.stroke();
+}
+async function loadBoundary(
+  lat: number,
+  lon: number,
+): Promise<AdministrativeBoundary | null> {
+  const key = Math.round(lat * 8) + ":" + Math.round(lon * 8);
+  if (boundaryCache.has(key)) {
+    const hit = boundaryCache.get(key)!;
+    boundaryCache.delete(key);
+    boundaryCache.set(key, hit);
+    return hit;
+  }
+  const pending = (async () => {
+    const q = new URLSearchParams({
+        format: "jsonv2",
+        lat: String(lat),
+        lon: String(lon),
+        zoom: "5",
+        addressdetails: "1",
+        polygon_geojson: "1",
+        polygon_threshold: "0.01",
+      }),
+      response = await requestWithRetry({
+        url: "https://nominatim.openstreetmap.org/reverse?" + q.toString(),
+        headers: { "Accept-Language": "en", "User-Agent": "MetaQuestSync/0.1" },
+      }),
+      json = response.json,
+      geometry = json.geojson,
+      address = json.address || {};
+    if (
+      !geometry ||
+      (geometry.type !== "Polygon" && geometry.type !== "MultiPolygon")
+    )
+      return null;
+    const state = String(
+        address.state || address.region || address.province || "",
+      ).trim(),
+      country = String(address.country || "").trim();
+    return {
+      geometry,
+      name:
+        state ||
+        country ||
+        String(json.name || json.display_name || "").split(",")[0],
+      countryCode: String(address.country_code || "").toUpperCase(),
+      country,
+      level: state ? ("state" as const) : ("country" as const),
+    };
+  })().catch((error) => {
+    boundaryCache.delete(key);
+    throw error;
+  });
+  boundaryCache.set(key, pending);
+  while (boundaryCache.size > 96)
+    boundaryCache.delete(boundaryCache.keys().next().value!);
+  return pending;
+}
+function regionLabel(results: Occurrence[], lat: number, lon: number) {
+  const counts = new Map<string, number>();
+  for (const item of results) {
+    const state = String(item.stateProvince || item.locality || "").trim(),
+      country = String(item.country || "").trim(),
+      name = state && country ? state + ", " + country : state || country;
+    if (name) counts.set(name, (counts.get(name) || 0) + 1);
+  }
+  return (
+    [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ||
+    lat.toFixed(2) + "°, " + lon.toFixed(2) + "°"
+  );
+}
+function mapCoordinate(c: Config, u: number, v: number) {
+  const center = tile(c.center[0], c.center[1], c.zoom),
+    wx = center.x - 1 + Math.max(0, Math.min(1, u)) * 3,
+    wy = center.y - 1 + Math.max(0, Math.min(1, v)) * 2;
+  return {
+    lon: (wx / center.scale) * 360 - 180,
+    lat:
+      (Math.atan(Math.sinh(Math.PI * (1 - (2 * wy) / center.scale))) * 180) /
+      Math.PI,
+  };
+}
+const REGION_PAGE_SIZE = 300,
+  REGION_RECORD_CAP = 9000;
+async function fetchRegionAt(
+  c: Config,
+  lat: number,
+  lon: number,
+  region: AdministrativeBoundary | null = null,
+) {
+  const radius = Math.max(0.35, 55 / 2 ** c.zoom);
+  const match = await requestWithRetry({
+      url: `https://api.gbif.org/v1/species/match?name=${encodeURIComponent(c.taxon)}`,
+    }),
+    key = Number(match.json.usageKey ?? match.json.speciesKey),
+    scientificName = String(match.json.scientificName || c.taxon);
+  const load = async (type: string) => {
+    const base: Record<string, string> = {
+      taxon_key: String(key),
+      has_coordinate: "true",
+      media_type: type,
+    };
+    if (region?.countryCode) base.country = region.countryCode;
+    if (region?.level === "state" && region.name)
+      base.state_province = region.name;
+    if (!region?.name) {
+      base.decimal_latitude = `${Math.max(-89.9, lat - radius)},${Math.min(89.9, lat + radius)}`;
+      base.decimal_longitude = `${Math.max(-179.9, lon - radius)},${Math.min(179.9, lon + radius)}`;
+    }
+    const results: Occurrence[] = [];
+    let offset = 0,
+      count = 0;
+    do {
+      const params = new URLSearchParams({
+          ...base,
+          limit: String(REGION_PAGE_SIZE),
+          offset: String(offset),
+        }),
+        page = (
+          await requestWithRetry({
+            url: "https://api.gbif.org/v1/occurrence/search?" + params.toString(),
+          })
+        ).json;
+      count = Number(page.count) || 0;
+      results.push(...(page.results || []));
+      if (!page.results?.length) break;
+      offset += REGION_PAGE_SIZE;
+    } while (offset < count && offset < REGION_RECORD_CAP);
+    return { count, results, truncated: offset < count };
+  };
+  const [photosJson, soundsJson] = await Promise.all([
+      load("StillImage"),
+      load("Sound"),
+    ]),
+    all = [...(photosJson.results || []), ...(soundsJson.results || [])];
+  const municipality = (record: Occurrence) =>
+    String(
+      record.municipality || record.county || record.locality || "",
+    ).trim();
+  const collect = (json: { results: Occurrence[] }, type: string, limit: number) => {
+    const output: RegionalMedia[] = [];
+    for (const record of json.results || [])
+      for (const media of record.media || [])
+        if (media.type === type && output.length < limit)
+          output.push({
+            ...media,
+            municipality: municipality(record),
+            place:
+              record.locality || record.stateProvince || record.country || "",
+          });
+    return output;
+  };
+  const counts = new Map<
+    string,
+    { name: string; photos: number; sounds: number }
+  >();
+  for (const record of all) {
+    const name = municipality(record);
+    if (!name) continue;
+    const item = counts.get(name) || { name, photos: 0, sounds: 0 };
+    for (const media of record.media || []) {
+      if (media.type === "StillImage") item.photos++;
+      if (media.type === "Sound") item.sounds++;
+    }
+    counts.set(name, item);
+  }
+  const locationName = region?.name
+    ? [region.name, region.country].filter(Boolean).join(", ")
+    : regionLabel(all, lat, lon);
+  return {
+    taxon: scientificName,
+    name: locationName,
+    lat,
+    lon,
+    count: Math.max(photosJson.count || 0, soundsJson.count || 0),
+    photos: collect(photosJson, "StillImage", 120),
+    sounds: collect(soundsJson, "Sound", 240),
+    municipalities: [...counts.values()]
+      .sort((a, b) => b.photos + b.sounds - (a.photos + a.sounds))
+      .slice(0, 120),
+    truncated: Boolean(photosJson.truncated || soundsJson.truncated),
+  };
+}
+async function fetchRegion(
+  c: Config,
+  u: number,
+  v: number,
+  region: AdministrativeBoundary | null = null,
+) {
+  const point = mapCoordinate(c, u, v);
+  return fetchRegionAt(c, point.lat, point.lon, region);
+}
+async function loadRegion(
+  c: Config,
+  u: number,
+  v: number,
+  region: AdministrativeBoundary | null = null,
+) {
+  const key =
+    JSON.stringify(c) +
+    ":" +
+    Math.round(u * 40) +
+    ":" +
+    Math.round(v * 40) +
+    ":" +
+    (region?.name || "") +
+    ":" +
+    (region?.countryCode || "");
+  if (regionResultCache.has(key)) {
+    const hit = regionResultCache.get(key)!;
+    regionResultCache.delete(key);
+    regionResultCache.set(key, hit);
+    return hit;
+  }
+  const pending = fetchRegion(c, u, v, region).catch((error) => {
+    regionResultCache.delete(key);
+    throw error;
+  });
+  regionResultCache.set(key, pending);
+  while (regionResultCache.size > 24)
+    regionResultCache.delete(regionResultCache.keys().next().value!);
+  return pending;
+}
+async function loadRegionAt(
+  c: Config,
+  lat: number,
+  lon: number,
+  region: AdministrativeBoundary | null = null,
+) {
+  const key =
+    JSON.stringify(c) +
+    ":" +
+    Math.round(lat * 20) +
+    ":" +
+    Math.round(lon * 20) +
+    ":" +
+    (region?.name || "") +
+    ":" +
+    (region?.countryCode || "");
+  if (regionResultCache.has(key)) {
+    const hit = regionResultCache.get(key)!;
+    regionResultCache.delete(key);
+    regionResultCache.set(key, hit);
+    return hit;
+  }
+  const pending = fetchRegionAt(c, lat, lon, region).catch((error) => {
+    regionResultCache.delete(key);
+    throw error;
+  });
+  regionResultCache.set(key, pending);
+  while (regionResultCache.size > 24)
+    regionResultCache.delete(regionResultCache.keys().next().value!);
+  return pending;
+}
+async function optimizedImageUrl(
+  url: string,
+  maxWidth = 1920,
+  maxHeight = 1080,
+): Promise<string> {
+  const response = await requestUrl({ url });
+  if (response.status < 200 || response.status >= 300)
+    throw new Error(`Image HTTP ${response.status}`);
+  const blob = new Blob([response.arrayBuffer], {
+      type: String(response.headers["content-type"] || "image/jpeg"),
+    }),
+    source = await createImageBitmap(blob);
+  try {
+    const scale = Math.min(
+      1,
+      maxWidth / source.width,
+      maxHeight / source.height,
+    );
+    if (scale >= 1) return URL.createObjectURL(blob);
+    const width = Math.max(1, Math.round(source.width * scale)),
+      height = Math.max(1, Math.round(source.height * scale)),
+      resized = await createImageBitmap(source, {
+        resizeWidth: width,
+        resizeHeight: height,
+        resizeQuality: "high",
+      }),
+      canvas = createEl("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext("2d")?.drawImage(resized, 0, 0);
+    resized.close();
+    const output = await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob(
+        (value) =>
+          value ? resolve(value) : reject(new Error("Image resize failed")),
+        "image/webp",
+        0.84,
+      ),
+    );
+    return URL.createObjectURL(output);
+  } finally {
+    source.close();
+  }
+}
+
+type SpeciesMapOptions = { analyzeAudio?: (url: string) => Promise<unknown> };
+const KNOWN_VOCAL_RANGES: Record<
+  string,
+  { low: [number, number]; high: [number, number]; note: string }
+> = {
+  "pitangus sulphuratus": {
+    low: [2600, 2800],
+    high: [3500, 4200],
+    note: "Faixa de referência; ruído urbano, clima e geografia podem deslocar os valores observados.",
+  },
+};
+function showRegion(
+  container: HTMLElement,
+  r: RegionResult,
+  options: SpeciesMapOptions,
+) {
+  let panel = container.querySelector<HTMLElement>(
+    ".meta-quest-species-region",
+  );
+  if (!panel) panel = container.createDiv({ cls: "meta-quest-species-region" });
+  panel.empty();
+  panel.createEl("strong", {
+    text: `${r.name} · ${r.count.toLocaleString()} records`,
+  });
+  const dashboard = panel.createDiv({ cls: "meta-quest-species-dashboard" }),
+    known =
+      KNOWN_VOCAL_RANGES[
+        String(r.taxon || "")
+          .toLowerCase()
+          .match(/^[a-z]+\s+[a-z]+/)?.[0] || ""
+      ],
+    range = dashboard.createDiv({ cls: "meta-quest-species-range" });
+  range.createEl("strong", { text: "Perfil acústico · " + r.taxon });
+  range.createDiv({
+    text: known
+      ? `mínima típica ${(known.low[0] / 1000).toFixed(1)}–${(known.low[1] / 1000).toFixed(1)} kHz · máxima típica ${(known.high[0] / 1000).toFixed(1)}–${(known.high[1] / 1000).toFixed(1)} kHz`
+      : "Faixa de referência ainda não catalogada; estimando pelas gravações disponíveis…",
+  });
+  if (known) range.createEl("small", { text: known.note });
+  const empirical = range.createDiv({
+    cls: "meta-quest-species-empirical",
+    text: "Faixa empírica: analisando gravações…",
+  });
+  const municipalities = dashboard.createDiv({
+    cls: "meta-quest-species-municipalities",
+  });
+  municipalities.createEl("strong", { text: "Municípios / localidades" });
+  const chips = municipalities.createDiv({ cls: "meta-quest-species-chips" });
+  let selected = "";
+  const mediaHost = panel.createDiv({ cls: "meta-quest-species-media" });
+  const renderMedia = () => {
+    mediaHost.empty();
+    const photos = selected
+        ? r.photos.filter((x) => x.municipality === selected)
+        : r.photos.slice(0, 6),
+      sounds = selected
+        ? r.sounds.filter((x) => x.municipality === selected)
+        : r.sounds.slice(0, 24);
+    const gallery = mediaHost.createDiv({ cls: "meta-quest-species-gallery" });
+    for (const media of photos) {
+      const a = gallery.createEl("a", {
+        href: media.references || media.identifier,
+      });
+      a.target = "_blank";
+      const image = a.createEl("img", {
+        attr: { loading: "lazy", alt: media.creator || "Species photo" },
+      });
+      void optimizedImageUrl(media.identifier, 1280, 720)
+        .then((url) => {
+          image.src = url;
+          image.addEventListener("load", () => URL.revokeObjectURL(url), {
+            once: true,
+          });
+        })
+        .catch(() => (image.alt = "Species image unavailable"));
+    }
+    for (const media of sounds) {
+      const row = mediaHost.createDiv({ cls: "meta-quest-species-sound" });
+      row.createSpan({
+        text:
+          (media.creator || "GBIF recording") +
+          (media.municipality ? " · " + media.municipality : ""),
+      });
+      const player = row.createEl("audio", {
+          attr: { src: media.identifier, controls: "", preload: "metadata" },
+        }),
+        trailButton = row.createEl("button", {
+          text: "Rastro 3D",
+          attr: { "aria-label": "Abrir identidade espectral em 3D" },
+        }),
+        frequency = row.createSpan({
+          cls: "meta-quest-species-frequency",
+          text: "Faixa vocal: analisar gravação",
+        });
+      let trail: HTMLElement | null = null;
+      trailButton.onclick = () => {
+        if (trail) {
+          trail.remove();
+          trail = null;
+          trailButton.setText("Rastro 3D");
+          return;
+        }
+        for (const other of Array.from(
+          document.querySelectorAll<HTMLAudioElement>("audio"),
+        ))
+          if (other !== player && !other.paused) other.pause();
+        if (player.paused) void player.play().catch(() => undefined);
+        trail = mountDesktopSpectralTrail(
+          player,
+          row,
+          () => {
+            if (!options.analyzeAudio)
+              throw new Error("Analisador espectral indisponível.");
+            return options.analyzeAudio(media.identifier);
+          },
+          {
+            storageKey: "species:" + media.identifier,
+            onFrequencyRange: (value) =>
+              frequency.setText(
+                "Faixa vocal estimada: " +
+                  value.minHz.toLocaleString() +
+                  "–" +
+                  value.maxHz.toLocaleString() +
+                  " Hz",
+              ),
+          },
+        );
+        trailButton.setText("Fechar 3D");
+      };
+    }
+    if (!photos.length && !sounds.length)
+      mediaHost.createDiv({
+        text: "Nenhuma mídia encontrada para esta localidade na amostra atual.",
+      });
+  };
+  const all = chips.createEl("button", { text: "Todos" });
+  all.addClass("is-active");
+  all.onclick = () => {
+    selected = "";
+    for (const x of Array.from(chips.querySelectorAll("button")))
+      x.removeClass("is-active");
+    all.addClass("is-active");
+    renderMedia();
+  };
+  for (const item of r.municipalities || []) {
+    const button = chips.createEl("button", {
+      text: `${item.name} · 📷 ${item.photos} · ♪ ${item.sounds}`,
+    });
+    button.onclick = () => {
+      selected = item.name;
+      for (const x of Array.from(chips.querySelectorAll("button")))
+        x.removeClass("is-active");
+      button.addClass("is-active");
+      renderMedia();
+    };
+  }
+  renderMedia();
+  if (options.analyzeAudio && r.sounds?.length)
+    void Promise.allSettled(
+      r.sounds.slice(0, 3).map((x) => options.analyzeAudio!(x.identifier)),
+    ).then((results) => {
+      const ranges = results.flatMap((x) =>
+        x.status === "fulfilled"
+          ? spectralFrequencyRange(x.value)
+            ? [spectralFrequencyRange(x.value)!]
+            : []
+          : [],
+      );
+      if (ranges.length)
+        empirical.setText(
+          `Faixa empírica (${ranges.length} gravações): ${Math.min(...ranges.map((x) => x.minHz)).toLocaleString()}–${Math.max(...ranges.map((x) => x.maxHz)).toLocaleString()} Hz`,
+        );
+      else empirical.setText("Faixa empírica indisponível para esta amostra.");
+    });
+  else empirical.setText("Faixa empírica disponível ao analisar uma gravação.");
+}
+
+async function renderRasterSpeciesMap(
+  source: string,
+  container: HTMLElement,
+  options: SpeciesMapOptions = {},
+) {
+  const c = parse(source);
+  container.addClass("meta-quest-species-map");
+  const bar = container.createDiv({ cls: "meta-quest-species-map-toolbar" }),
+    status = bar.createSpan({ text: "Loading GBIF occurrence map…" }),
+    minus = bar.createEl("button", {
+      text: "−",
+      attr: { "aria-label": "Zoom out" },
+    }),
+    plus = bar.createEl("button", {
+      text: "+",
+      attr: { "aria-label": "Zoom in" },
+    }),
+    viewport = container.createDiv({ cls: "meta-quest-species-map-viewport" }),
+    image = viewport.createEl("img", {
+      cls: "meta-quest-species-map-image",
+      attr: { alt: "Species occurrence map", draggable: "false" },
+    }),
+    boundary = viewport.createEl("canvas", {
+      cls: "meta-quest-species-boundary",
+      attr: { width: "900", height: "600", "aria-hidden": "true" },
+    });
+  setIcon(minus, "zoom-out");
+  setIcon(plus, "zoom-in");
+  image.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  });
+  let generation = 0,
+    selectedBoundary: BoundaryGeometry | null = null,
+    hoveredRegion: null | ({ u: number; v: number } & AdministrativeBoundary) =
+      null,
+    hoverGeneration = 0,
+    hoverTimer: number | null = null;
+  const settleViewport = () => {
+    viewport.removeClass("is-zooming");
+    viewport.setCssProps({
+      "--map-shift-x": "0px",
+      "--map-shift-y": "0px",
+      "--map-scale": "1",
+      "--map-origin-x": "50%",
+      "--map-origin-y": "50%",
+    });
+  };
+  const update = async () => {
+    const current = ++generation;
+    boundary.addClass("is-hidden");
+    status.setText("Loading GBIF occurrence map…");
+    try {
+      const result = await raster(c);
+      if (current !== generation) return;
+      const prepared = new Image();
+      prepared.decoding = "async";
+      prepared.src = result.dataUrl;
+      try {
+        await prepared.decode();
+      } catch { /* The browser can still display the image without eager decoding. */ }
+      if (current !== generation) return;
+      image.src = result.dataUrl;
+      image.alt = `Occurrence map for ${result.name}`;
+      settleViewport();
+      drawBoundary(boundary, c, selectedBoundary);
+      boundary.removeClass("is-hidden");
+      status.setText(
+        result.degraded
+          ? `${result.name} · mapa parcial; mova para tentar novamente`
+          : `${result.name} · zoom ${c.zoom} · drag to pan`,
+      );
+    } catch (e) {
+      if (current === generation) {
+        settleViewport();
+        boundary.removeClass("is-hidden");
+        drawBoundary(boundary, c, selectedBoundary);
+        status.setText(
+          `Map unavailable: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    }
+  };
+  let navigationTimer: number | null = null;
+  const scheduleUpdate = () => {
+    if (navigationTimer !== null) window.clearTimeout(navigationTimer);
+    navigationTimer = window.setTimeout(() => {
+      navigationTimer = null;
+      void update();
+    }, 70);
+  };
+  const zoomTo = (next: number, originX = 50, originY = 50) => {
+    next = Math.max(1, Math.min(8, next));
+    if (next === c.zoom) return;
+    const scale = next > c.zoom ? 1.72 : 0.62;
+    c.zoom = next;
+    viewport.setCssProps({
+      "--map-origin-x": `${originX}%`,
+      "--map-origin-y": `${originY}%`,
+      "--map-scale": String(scale),
+    });
+    viewport.addClass("is-zooming");
+    boundary.addClass("is-hidden");
+    scheduleUpdate();
+  };
+  minus.onclick = () => zoomTo(c.zoom - 1);
+  plus.onclick = () => zoomTo(c.zoom + 1);
+  let drag: null | {
+    id: number;
+    x: number;
+    y: number;
+    dx: number;
+    dy: number;
+    moved: boolean;
+  } = null;
+  image.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 && event.pointerType === "mouse") return;
+    drag = {
+      id: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      dx: 0,
+      dy: 0,
+      moved: false,
+    };
+    image.setPointerCapture(event.pointerId);
+    image.addClass("is-dragging");
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  image.addEventListener("pointermove", (event) => {
+    if (!drag) {
+      if (event.pointerType !== "mouse") return;
+      const bounds = image.getBoundingClientRect(),
+        u = (event.clientX - bounds.left) / bounds.width,
+        v = (event.clientY - bounds.top) / bounds.height,
+        point = mapCoordinate(c, u, v),
+        request = ++hoverGeneration;
+      if (hoverTimer !== null) window.clearTimeout(hoverTimer);
+      hoverTimer = window.setTimeout(() => {
+        void loadBoundary(point.lat, point.lon).then((region) => {
+          if (request !== hoverGeneration) return;
+          hoveredRegion = region ? { u, v, ...region } : null;
+          drawBoundary(boundary, c, region?.geometry ?? selectedBoundary);
+          if (hoveredRegion?.name)
+            status.setText(hoveredRegion.name + " · click to select");
+        });
+      }, 90);
+      return;
+    }
+    if (event.pointerId !== drag.id) return;
+    drag.dx = event.clientX - drag.x;
+    drag.dy = event.clientY - drag.y;
+    if (Math.hypot(drag.dx, drag.dy) > 7) drag.moved = true;
+    viewport.setCssProps({
+      "--map-shift-x": `${drag.dx}px`,
+      "--map-shift-y": `${drag.dy}px`,
+      "--map-scale": "1.025",
+    });
+    event.preventDefault();
+  });
+  const finish = (event: PointerEvent) => {
+    if (!drag || event.pointerId !== drag.id) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const finalDx = event.clientX - drag.x,
+      finalDy = event.clientY - drag.y,
+      moved = drag.moved || Math.hypot(finalDx, finalDy) > 7,
+      dx = moved ? finalDx : drag.dx,
+      dy = moved ? finalDy : drag.dy;
+    drag = null;
+    image.removeClass("is-dragging");
+    if (!moved) {
+      viewport.setCssProps({
+        "--map-shift-x": "0px",
+        "--map-shift-y": "0px",
+        "--map-scale": "1",
+      });
+      const bounds = image.getBoundingClientRect();
+      let marker = viewport.querySelector<HTMLElement>(
+        ".meta-quest-species-selection",
+      );
+      if (!marker)
+        marker = viewport.createSpan({ cls: "meta-quest-species-selection" });
+      marker.setCssProps({
+        "--marker-x":
+          ((event.clientX - bounds.left) / bounds.width) * 100 + "%",
+        "--marker-y":
+          ((event.clientY - bounds.top) / bounds.height) * 100 + "%",
+      });
+      status.setText("Loading regional photos and sounds…");
+      const clickU = (event.clientX - bounds.left) / bounds.width,
+        clickV = (event.clientY - bounds.top) / bounds.height,
+        selected = hoveredRegion;
+      void loadRegion(c, selected?.u ?? clickU, selected?.v ?? clickV, selected)
+        .then((r) => {
+          showRegion(container, r, options);
+          void loadBoundary(r.lat, r.lon).then((region) => {
+            selectedBoundary = region?.geometry || null;
+            drawBoundary(boundary, c, selectedBoundary);
+          });
+          status.setText(`${r.name} · ${r.count.toLocaleString()} records`);
+        })
+        .catch((e) =>
+          status.setText(
+            `Region unavailable: ${e instanceof Error ? e.message : String(e)}`,
+          ),
+        );
+      return;
+    }
+    c.center = centerAfterDrag(
+      c.center,
+      dx,
+      dy,
+      c.zoom,
+      image.clientWidth,
+      image.clientHeight,
+    );
+    scheduleUpdate();
+  };
+  image.addEventListener("pointerup", finish);
+  image.addEventListener("pointercancel", finish);
+  image.addEventListener("pointerleave", () => {
+    hoverGeneration++;
+    hoveredRegion = null;
+    if (hoverTimer !== null) window.clearTimeout(hoverTimer);
+    drawBoundary(boundary, c, selectedBoundary);
+  });
+  image.addEventListener(
+    "wheel",
+    (event) => {
+      event.preventDefault();
+      const bounds = image.getBoundingClientRect(),
+        originX = ((event.clientX - bounds.left) / bounds.width) * 100,
+        originY = ((event.clientY - bounds.top) / bounds.height) * 100;
+      zoomTo(c.zoom + (event.deltaY < 0 ? 1 : -1), originX, originY);
+    },
+    { passive: false },
+  );
+  await update();
+}
+
+export async function renderSpeciesMap(
+  source: string,
+  container: HTMLElement,
+  options: SpeciesMapOptions = {},
+) {
+  const c = parse(source);
+  try {
+    await mountLeafletSpeciesMap(
+      container,
+      { taxon: c.taxon, center: c.center, zoom: c.zoom },
+      {
+        resolveBoundary: async (lat, lon) =>
+          (await loadBoundary(lat, lon)) ?? { geometry: null, name: "" },
+        selectRegion: async (lat, lon, region) => {
+          const result = await loadRegionAt(c, lat, lon, region);
+          showRegion(container, result, options);
+          return { name: result.name, count: result.count };
+        },
+      },
+    );
+  } catch (error) {
+    container.empty();
+    console.warn(
+      "Global species map unavailable; using raster fallback",
+      error,
+    );
+    await renderRasterSpeciesMap(source, container, options);
+  }
+}
+
+export function renderIucnStatus(root: HTMLElement) {
+  const cats = ["EX", "EW", "CR", "EN", "VU", "NT", "LC"];
+  for (const el of Array.from(
+    root.querySelectorAll<HTMLElement>("p,blockquote p"),
+  )) {
+    const text = (el.textContent || "").replace(/\s+/g, " ").trim();
+    if (!/IUCN\s*3\.1\s*:/i.test(text) || el.querySelector(".meta-quest-iucn"))
+      continue;
+    const marked = el.querySelector("mark")?.textContent?.trim().toUpperCase();
+    const active = marked && cats.includes(marked) ? marked : "LC";
+    const scale = createDiv();
+    scale.className = "meta-quest-iucn meta-quest-iucn-inline";
+    const title = createDiv();
+    title.className = "meta-quest-iucn-title";
+    title.textContent =
+      active === "LC"
+        ? tr("Pouco Preocupante", "Least Concern")
+        : "IUCN " + active;
+    const row = createDiv();
+    row.className = "meta-quest-iucn-row";
+    for (const c of cats) {
+      const x = createSpan();
+      x.className = `meta-quest-iucn-category${c === active ? " is-active" : ""}`;
+      x.textContent = c;
+      row.append(x);
+    }
+    const labels = createDiv();
+    labels.className = "meta-quest-iucn-labels";
+    for (const label of [
+      tr("Extinta", "Extinct"),
+      tr("Ameaçada", "Threatened"),
+      tr("Pouco preocupante", "Least concern"),
+    ]) {
+      const item = createSpan();
+      item.textContent = label;
+      labels.append(item);
+    }
+    scale.append(title, row, labels);
+    el.replaceWith(scale);
   }
 }

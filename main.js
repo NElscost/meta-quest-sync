@@ -4372,7 +4372,7 @@ var require_browser = __commonJS({
     var QRCode2 = require_qrcode();
     var CanvasRenderer = require_canvas();
     var SvgRenderer = require_svg_tag();
-    function renderCanvas(renderFunc, canvas, text, opts, cb) {
+    function renderCanvas(renderFunc, canvas, text2, opts, cb) {
       const args = [].slice.call(arguments, 1);
       const argsNum = args.length;
       const isLastArgCb = typeof args[argsNum - 1] === "function";
@@ -4384,8 +4384,8 @@ var require_browser = __commonJS({
           throw new Error("Too few arguments provided");
         }
         if (argsNum === 2) {
-          cb = text;
-          text = canvas;
+          cb = text2;
+          text2 = canvas;
           canvas = opts = void 0;
         } else if (argsNum === 3) {
           if (canvas.getContext && typeof cb === "undefined") {
@@ -4393,8 +4393,8 @@ var require_browser = __commonJS({
             opts = void 0;
           } else {
             cb = opts;
-            opts = text;
-            text = canvas;
+            opts = text2;
+            text2 = canvas;
             canvas = void 0;
           }
         }
@@ -4403,16 +4403,16 @@ var require_browser = __commonJS({
           throw new Error("Too few arguments provided");
         }
         if (argsNum === 1) {
-          text = canvas;
+          text2 = canvas;
           canvas = opts = void 0;
         } else if (argsNum === 2 && !canvas.getContext) {
-          opts = text;
-          text = canvas;
+          opts = text2;
+          text2 = canvas;
           canvas = void 0;
         }
         return new Promise(function(resolve, reject) {
           try {
-            const data = QRCode2.create(text, opts);
+            const data = QRCode2.create(text2, opts);
             resolve(renderFunc(data, canvas, opts));
           } catch (e) {
             reject(e);
@@ -4420,7 +4420,7 @@ var require_browser = __commonJS({
         });
       }
       try {
-        const data = QRCode2.create(text, opts);
+        const data = QRCode2.create(text2, opts);
         cb(null, renderFunc(data, canvas, opts));
       } catch (e) {
         cb(e);
@@ -4444,8 +4444,8 @@ var require_server = __commonJS({
     var Utf8Renderer = require_utf8();
     var TerminalRenderer = require_terminal2();
     var SvgRenderer = require_svg();
-    function checkParams(text, opts, cb) {
-      if (typeof text === "undefined") {
+    function checkParams(text2, opts, cb) {
+      if (typeof text2 === "undefined") {
         throw new Error("String required as first argument");
       }
       if (typeof cb === "undefined") {
@@ -4492,11 +4492,11 @@ var require_server = __commonJS({
           return Utf8Renderer;
       }
     }
-    function render(renderFunc, text, params) {
+    function render(renderFunc, text2, params) {
       if (!params.cb) {
         return new Promise(function(resolve, reject) {
           try {
-            const data = QRCode2.create(text, params.opts);
+            const data = QRCode2.create(text2, params.opts);
             return renderFunc(data, params.opts, function(err, data2) {
               return err ? reject(err) : resolve(data2);
             });
@@ -4506,7 +4506,7 @@ var require_server = __commonJS({
         });
       }
       try {
-        const data = QRCode2.create(text, params.opts);
+        const data = QRCode2.create(text2, params.opts);
         return renderFunc(data, params.opts, params.cb);
       } catch (e) {
         params.cb(e);
@@ -4514,43 +4514,43 @@ var require_server = __commonJS({
     }
     exports2.create = QRCode2.create;
     exports2.toCanvas = require_browser().toCanvas;
-    exports2.toString = function toString(text, opts, cb) {
-      const params = checkParams(text, opts, cb);
+    exports2.toString = function toString(text2, opts, cb) {
+      const params = checkParams(text2, opts, cb);
       const type = params.opts ? params.opts.type : void 0;
       const renderer = getStringRendererFromType(type);
-      return render(renderer.render, text, params);
+      return render(renderer.render, text2, params);
     };
-    exports2.toDataURL = function toDataURL(text, opts, cb) {
-      const params = checkParams(text, opts, cb);
+    exports2.toDataURL = function toDataURL(text2, opts, cb) {
+      const params = checkParams(text2, opts, cb);
       const renderer = getRendererFromType(params.opts.type);
-      return render(renderer.renderToDataURL, text, params);
+      return render(renderer.renderToDataURL, text2, params);
     };
-    exports2.toBuffer = function toBuffer(text, opts, cb) {
-      const params = checkParams(text, opts, cb);
+    exports2.toBuffer = function toBuffer(text2, opts, cb) {
+      const params = checkParams(text2, opts, cb);
       const renderer = getRendererFromType(params.opts.type);
-      return render(renderer.renderToBuffer, text, params);
+      return render(renderer.renderToBuffer, text2, params);
     };
-    exports2.toFile = function toFile(path3, text, opts, cb) {
-      if (typeof path3 !== "string" || !(typeof text === "string" || typeof text === "object")) {
+    exports2.toFile = function toFile(path3, text2, opts, cb) {
+      if (typeof path3 !== "string" || !(typeof text2 === "string" || typeof text2 === "object")) {
         throw new Error("Invalid argument");
       }
       if (arguments.length < 3 && !canPromise()) {
         throw new Error("Too few arguments provided");
       }
-      const params = checkParams(text, opts, cb);
+      const params = checkParams(text2, opts, cb);
       const type = params.opts.type || getTypeFromFilename(path3);
       const renderer = getRendererFromType(type);
       const renderToFile = renderer.renderToFile.bind(null, path3);
-      return render(renderToFile, text, params);
+      return render(renderToFile, text2, params);
     };
-    exports2.toFileStream = function toFileStream(stream, text, opts) {
+    exports2.toFileStream = function toFileStream(stream, text2, opts) {
       if (arguments.length < 2) {
         throw new Error("Too few arguments provided");
       }
-      const params = checkParams(text, opts, stream.emit.bind(stream, "error"));
+      const params = checkParams(text2, opts, stream.emit.bind(stream, "error"));
       const renderer = getRendererFromType("png");
       const renderToFileStream = renderer.renderToFileStream.bind(null, stream);
-      render(renderToFileStream, text, params);
+      render(renderToFileStream, text2, params);
     };
   }
 });
@@ -8289,9 +8289,9 @@ var require_leaflet_src = __commonJS({
             this._updateScale(this._iScale, feet + " ft", feet / maxFeet);
           }
         },
-        _updateScale: function(scale2, text, ratio) {
+        _updateScale: function(scale2, text2, ratio) {
           scale2.style.width = Math.round(this.options.maxWidth * ratio) + "px";
-          scale2.innerHTML = text;
+          scale2.innerHTML = text2;
         },
         _getRoundNum: function(num) {
           var pow10 = Math.pow(10, (Math.floor(num) + "").length - 1), d = num / pow10;
@@ -8349,25 +8349,25 @@ var require_leaflet_src = __commonJS({
         },
         // @method addAttribution(text: String): this
         // Adds an attribution text (e.g. `'&copy; OpenStreetMap contributors'`).
-        addAttribution: function(text) {
-          if (!text) {
+        addAttribution: function(text2) {
+          if (!text2) {
             return this;
           }
-          if (!this._attributions[text]) {
-            this._attributions[text] = 0;
+          if (!this._attributions[text2]) {
+            this._attributions[text2] = 0;
           }
-          this._attributions[text]++;
+          this._attributions[text2]++;
           this._update();
           return this;
         },
         // @method removeAttribution(text: String): this
         // Removes an attribution text.
-        removeAttribution: function(text) {
-          if (!text) {
+        removeAttribution: function(text2) {
+          if (!text2) {
             return this;
           }
-          if (this._attributions[text]) {
-            this._attributions[text]--;
+          if (this._attributions[text2]) {
+            this._attributions[text2]--;
             this._update();
           }
           return this;
@@ -14119,9 +14119,9 @@ __export(main_exports, {
 });
 module.exports = __toCommonJS(main_exports);
 var import_node_fs2 = require("node:fs");
-var import_node_path2 = __toESM(require("node:path"), 1);
+var import_node_path3 = __toESM(require("node:path"), 1);
 var import_qrcode = __toESM(require_lib(), 1);
-var import_obsidian6 = require("obsidian");
+var import_obsidian8 = require("obsidian");
 
 // src/graph-exporter.ts
 var import_obsidian = require("obsidian");
@@ -14198,16 +14198,10 @@ ${source.path}`;
 }
 
 // src/i18n.ts
+var import_obsidian2 = require("obsidian");
 var languagePreference = "system";
 function systemLanguage() {
-  try {
-    const configured = globalThis.localStorage?.getItem("language")?.trim();
-    if (configured) return configured;
-  } catch {
-  }
-  const documentLanguage = globalThis.document?.documentElement?.lang?.trim();
-  if (documentLanguage) return documentLanguage;
-  return globalThis.navigator?.languages?.[0] ?? globalThis.navigator?.language ?? "en";
+  return (0, import_obsidian2.getLanguage)();
 }
 function setLanguagePreference(preference) {
   languagePreference = preference;
@@ -14241,7 +14235,7 @@ function createPairingUrl(viewerUrl, bridgeUrl, token, language) {
 // src/session-manager.ts
 var import_node_fs = require("node:fs");
 var import_node_path = __toESM(require("node:path"), 1);
-var import_obsidian2 = require("obsidian");
+var import_obsidian3 = require("obsidian");
 function parseProcessState(contents) {
   return JSON.parse(contents.replace(/^\uFEFF/u, ""));
 }
@@ -14277,7 +14271,7 @@ var SessionManager = class {
       const port = Number.isInteger(state.port) ? state.port : settings.port;
       if (port !== settings.port || token.length < 32) return null;
       const localUrl = `http://127.0.0.1:${port}`;
-      const response = await (0, import_obsidian2.requestUrl)({
+      const response = await (0, import_obsidian3.requestUrl)({
         url: `${localUrl}/verify`,
         headers: { Authorization: `Bearer ${token}` },
         throw: false
@@ -14307,24 +14301,46 @@ var SessionManager = class {
 };
 
 // src/species-map.ts
+var import_obsidian6 = require("obsidian");
+
+// src/desktop-spectral-trail.ts
 var import_obsidian4 = require("obsidian");
+var import_node_path2 = require("node:path");
+var import_node_module = require("node:module");
+
+// src/plugin-context.ts
+var pluginApp = null;
+function setPluginApp(app) {
+  pluginApp = app;
+}
+function getPluginApp() {
+  if (!pluginApp) throw new Error("Meta Quest Sync is not loaded.");
+  return pluginApp;
+}
+function loadVaultValue(key) {
+  return getPluginApp().loadLocalStorage(key);
+}
+function saveVaultValue(key, value) {
+  getPluginApp().saveLocalStorage(key, value);
+}
 
 // src/desktop-spectral-trail.ts
 var spectralEngine = null;
 function loadSpectralEngine() {
   if (spectralEngine) return spectralEngine;
-  const obsidianApp = globalThis.app, adapter = obsidianApp?.vault?.adapter, base = typeof adapter?.getBasePath === "function" ? adapter.getBasePath() : adapter?.basePath, config = obsidianApp?.vault?.configDir || ".obsidian";
-  if (!base)
+  const app = getPluginApp();
+  const adapter = app.vault.adapter;
+  if (!(adapter instanceof import_obsidian4.FileSystemAdapter))
     throw new Error(
       "Diret\xF3rio do vault indispon\xEDvel para localizar o motor espectral."
     );
-  const enginePath = require("path").join(
-    base,
-    config,
+  const enginePath = (0, import_node_path2.join)(
+    adapter.getBasePath(),
+    app.vault.configDir,
     "plugins",
     "meta-quest-sync",
     "spectral-engine.cjs"
-  ), nodeRequire = require("module").createRequire(enginePath), resolved = nodeRequire.resolve(enginePath);
+  ), nodeRequire = (0, import_node_module.createRequire)(enginePath), resolved = nodeRequire.resolve(enginePath);
   delete nodeRequire.cache[resolved];
   spectralEngine = nodeRequire(resolved);
   return spectralEngine;
@@ -14498,11 +14514,8 @@ function mountDesktopSpectralTrail(audio, host, loadAnalysis, options = {}) {
     text: tr("Analisando \xE1udio\u2026", "Analyzing audio\u2026")
   });
   const savedKey = options.storageKey ? `meta-quest-spectral-frequency:${options.storageKey}` : "meta-quest-spectral-frequency:default";
-  let saved = {};
-  try {
-    saved = JSON.parse(localStorage.getItem(savedKey) || "{}");
-  } catch {
-  }
+  const stored = loadVaultValue(savedKey);
+  const saved = stored && typeof stored === "object" ? stored : {};
   const filters = shell.createDiv({ cls: "meta-quest-spectral-filters" });
   const numeric = (label2, value, min, max, step) => {
     const wrap = filters.createEl("label");
@@ -14545,13 +14558,13 @@ function mountDesktopSpectralTrail(audio, host, loadAnalysis, options = {}) {
     "10"
   ), saveHz = filters.createEl("button", { text: tr("Salvar Hz", "Save Hz") });
   saveHz.onclick = () => {
-    localStorage.setItem(
+    saveVaultValue(
       savedKey,
-      JSON.stringify({
+      {
         minHz: Number(minHz.value) || 0,
         maxHz: Number(maxHz.value) || 18e3,
         syncMs: Number(syncOffset.value) || 0
-      })
+      }
     );
     saveHz.setText(tr("Hz salvos \u2713", "Hz saved \u2713"));
     window.setTimeout(() => saveHz.setText(tr("Salvar Hz", "Save Hz")), 1400);
@@ -14577,16 +14590,16 @@ function mountDesktopSpectralTrail(audio, host, loadAnalysis, options = {}) {
     tr("Proje\xE7\xE3o cepstral", "Cepstral projection"),
     tr("Perfil crom\xE1tico derivado", "Derived chroma profile")
   ];
-  const glCanvas = document.createElement("canvas");
+  const glCanvas = createEl("canvas");
   glCanvas.className = canvas.className;
   glCanvas.width = 960;
   glCanvas.height = 480;
   glCanvas.addClass("is-hidden");
-  const glViewport = document.createElement("div");
+  const glViewport = createDiv();
   glViewport.className = "meta-quest-spectral-viewport";
   canvas.insertAdjacentElement("beforebegin", glViewport);
   glViewport.append(glCanvas, canvas);
-  const labelCanvas = document.createElement("canvas");
+  const labelCanvas = createEl("canvas");
   labelCanvas.width = 960;
   labelCanvas.height = 480;
   labelCanvas.className = "meta-quest-spectral-labels";
@@ -14630,12 +14643,12 @@ function mountDesktopSpectralTrail(audio, host, loadAnalysis, options = {}) {
     ctx.lineTo(pb.x, pb.y);
     ctx.stroke();
   };
-  function label(text, p) {
+  function label(text2, p) {
     if (!ctx) return;
     const q = project(p);
     ctx.fillStyle = "rgba(220,237,252,.78)";
     ctx.font = "15px system-ui";
-    ctx.fillText(text, q.x + 5, q.y - 4);
+    ctx.fillText(text2, q.x + 5, q.y - 4);
   }
   function grid() {
     for (let i = -5; i <= 5; i++) {
@@ -14900,7 +14913,7 @@ function mountDesktopSpectralTrail(audio, host, loadAnalysis, options = {}) {
     if (disposed || !ctx) return;
     const cadence = scene3d && emissions ? 1 : Math.max(renderEvery, audio.paused && !auto ? 4 : 1);
     if (++rafTick % cadence !== 0) {
-      frame = requestAnimationFrame(render);
+      frame = window.requestAnimationFrame(render);
       return;
     }
     const mediaTime = clockTime();
@@ -14949,7 +14962,7 @@ function mountDesktopSpectralTrail(audio, host, loadAnalysis, options = {}) {
           )
         );
       }
-      frame = requestAnimationFrame(render);
+      frame = window.requestAnimationFrame(render);
       return;
     }
     ctx.fillStyle = "#050b13";
@@ -14981,7 +14994,7 @@ function mountDesktopSpectralTrail(audio, host, loadAnalysis, options = {}) {
         22,
         32
       );
-      frame = requestAnimationFrame(render);
+      frame = window.requestAnimationFrame(render);
       return;
     }
     for (const point of selected) {
@@ -15051,7 +15064,7 @@ function mountDesktopSpectralTrail(audio, host, loadAnalysis, options = {}) {
       22,
       32
     );
-    frame = requestAnimationFrame(render);
+    frame = window.requestAnimationFrame(render);
   }
   const setZoom = (value) => {
     const previous = zoom;
@@ -15147,7 +15160,7 @@ function mountDesktopSpectralTrail(audio, host, loadAnalysis, options = {}) {
   const observer = new MutationObserver(() => {
     if (document.contains(shell)) return;
     disposed = true;
-    cancelAnimationFrame(frame);
+    window.cancelAnimationFrame(frame);
     release3d();
     observer.disconnect();
   });
@@ -15205,8 +15218,62 @@ function mountDesktopSpectralTrail(audio, host, loadAnalysis, options = {}) {
 }
 
 // src/leaflet-species-map.ts
-var import_obsidian3 = require("obsidian");
+var import_obsidian5 = require("obsidian");
 var L2 = __toESM(require_leaflet_src(), 1);
+
+// src/species-data.ts
+function objectValue(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+function text(value) {
+  return typeof value === "string" ? value : "";
+}
+function number(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : NaN;
+}
+function coordinates(value, depth) {
+  return Array.isArray(value) && value.length > 0 && (depth === 0 ? value.length >= 2 && value.every((n) => typeof n === "number" && Number.isFinite(n)) : value.every((item) => coordinates(item, depth - 1)));
+}
+function parseSpeciesData(value) {
+  const v = objectValue(value), geometry = objectValue(v.geojson);
+  const geojson = geometry.type === "Polygon" && coordinates(geometry.coordinates, 2) ? geometry : geometry.type === "MultiPolygon" && coordinates(geometry.coordinates, 3) ? geometry : null;
+  const address = {};
+  for (const [key, entry] of Object.entries(objectValue(v.address))) if (typeof entry === "string") address[key] = entry;
+  const raw = Array.isArray(v.results) ? v.results : [];
+  return {
+    count: number(v.count) || 0,
+    usageKey: Number.isFinite(number(v.usageKey)) ? number(v.usageKey) : void 0,
+    speciesKey: Number.isFinite(number(v.speciesKey)) ? number(v.speciesKey) : void 0,
+    scientificName: text(v.scientificName),
+    geojson,
+    address,
+    name: text(v.name),
+    display_name: text(v.display_name),
+    results: raw.map((item) => {
+      const r = objectValue(item), media = Array.isArray(r.media) ? r.media : [];
+      return {
+        decimalLatitude: number(r.decimalLatitude),
+        decimalLongitude: number(r.decimalLongitude),
+        municipality: text(r.municipality),
+        county: text(r.county),
+        locality: text(r.locality),
+        stateProvince: text(r.stateProvince),
+        country: text(r.country),
+        media: media.map((item2) => {
+          const m = objectValue(item2);
+          return {
+            type: text(m.type),
+            identifier: text(m.identifier),
+            references: text(m.references),
+            creator: text(m.creator)
+          };
+        }).filter((m) => /^https?:\/\//i.test(m.identifier))
+      };
+    })
+  };
+}
+
+// src/leaflet-species-map.ts
 var coordinateCache = /* @__PURE__ */ new Map();
 var MAX_POINTS = 3e3;
 var PAGE_SIZE = 300;
@@ -15216,7 +15283,7 @@ async function json(url) {
   let last;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      return (await (0, import_obsidian3.requestUrl)({ url })).json;
+      return parseSpeciesData((await (0, import_obsidian5.requestUrl)({ url })).json);
     } catch (error) {
       last = error;
       if (attempt < 2) await pause(180 * (attempt + 1) * (attempt + 1));
@@ -15225,7 +15292,9 @@ async function json(url) {
   throw last;
 }
 async function taxon(name) {
-  const value = await json("https://api.gbif.org/v1/species/match?name=" + encodeURIComponent(name)), key = Number(value.usageKey ?? value.speciesKey);
+  const value = await json(
+    "https://api.gbif.org/v1/species/match?name=" + encodeURIComponent(name)
+  ), key = Number(value.usageKey ?? value.speciesKey);
   if (!Number.isFinite(key)) throw new Error(`Taxon not found: ${name}`);
   return { key, name: String(value.scientificName || name) };
 }
@@ -15234,19 +15303,23 @@ function cacheKey(key) {
 }
 function readStored(key) {
   try {
-    const value = JSON.parse(localStorage.getItem(cacheKey(key)) || "null");
-    return value && Date.now() - value.savedAt < 7 * 864e5 && Array.isArray(value.points) ? value.points : null;
+    const value = objectValue(loadVaultValue(cacheKey(key)));
+    return value && typeof value.savedAt === "number" && Date.now() - value.savedAt < 7 * 864e5 && Array.isArray(value.points) ? value.points.filter((p) => Array.isArray(p) && p.length === 2 && p.every((n) => typeof n === "number" && Number.isFinite(n))) : null;
   } catch {
     return null;
   }
 }
 function writeStored(key, points) {
   try {
-    localStorage.setItem(cacheKey(key), JSON.stringify({ savedAt: Date.now(), points }));
-  } catch {
+    saveVaultValue(
+      cacheKey(key),
+      { savedAt: Date.now(), points }
+    );
+  } catch (error) {
+    console.debug("Coordinate cache could not be saved.", error);
   }
 }
-async function coordinates(key) {
+async function coordinates2(key) {
   if (coordinateCache.has(key)) return coordinateCache.get(key);
   const pending = (async () => {
     const stored = readStored(key);
@@ -15254,7 +15327,14 @@ async function coordinates(key) {
     const points = [], seen = /* @__PURE__ */ new Set();
     let offset = 0, total = Infinity;
     while (offset < total && points.length < MAX_POINTS) {
-      const params = new URLSearchParams({ taxon_key: String(key), has_coordinate: "true", limit: String(PAGE_SIZE), offset: String(offset) }), page = await json("https://api.gbif.org/v1/occurrence/search?" + params);
+      const params = new URLSearchParams({
+        taxon_key: String(key),
+        has_coordinate: "true",
+        limit: String(PAGE_SIZE),
+        offset: String(offset)
+      }), page = await json(
+        "https://api.gbif.org/v1/occurrence/search?" + params.toString()
+      );
       total = Math.min(Number(page.count) || 0, MAX_POINTS);
       for (const item of page.results || []) {
         const lat = Number(item.decimalLatitude), lon = Number(item.decimalLongitude);
@@ -15278,11 +15358,31 @@ async function coordinates(key) {
 }
 async function mountLeafletSpeciesMap(container, config, options) {
   container.addClass("meta-quest-species-map", "meta-quest-species-map-vector");
-  const toolbar = container.createDiv({ cls: "meta-quest-species-map-toolbar" }), status = toolbar.createSpan({ text: "Abrindo mapa global\u2026" }), minus = toolbar.createEl("button", { attr: { "aria-label": "Zoom out" } }), plus = toolbar.createEl("button", { attr: { "aria-label": "Zoom in" } }), host = container.createDiv({ cls: "meta-quest-species-vector-host" }), attribution = container.createDiv({ cls: "meta-quest-species-attribution", text: "\xA9 OpenStreetMap contributors \xB7 data \xA9 GBIF" });
-  (0, import_obsidian3.setIcon)(minus, "zoom-out");
-  (0, import_obsidian3.setIcon)(plus, "zoom-in");
-  const map2 = L2.map(host, { center: config.center, zoom: config.zoom, zoomControl: false, attributionControl: false, preferCanvas: false, worldCopyJump: true, zoomAnimation: true, fadeAnimation: true, markerZoomAnimation: true });
-  L2.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, crossOrigin: true, updateWhenIdle: false, keepBuffer: 3 }).addTo(map2);
+  const toolbar = container.createDiv({
+    cls: "meta-quest-species-map-toolbar"
+  }), status = toolbar.createSpan({ text: "Abrindo mapa global\u2026" }), minus = toolbar.createEl("button", { attr: { "aria-label": "Zoom out" } }), plus = toolbar.createEl("button", { attr: { "aria-label": "Zoom in" } }), host = container.createDiv({ cls: "meta-quest-species-vector-host" }), attribution = container.createDiv({
+    cls: "meta-quest-species-attribution",
+    text: "\xA9 OpenStreetMap contributors \xB7 data \xA9 GBIF"
+  });
+  (0, import_obsidian5.setIcon)(minus, "zoom-out");
+  (0, import_obsidian5.setIcon)(plus, "zoom-in");
+  const map2 = L2.map(host, {
+    center: config.center,
+    zoom: config.zoom,
+    zoomControl: false,
+    attributionControl: false,
+    preferCanvas: false,
+    worldCopyJump: true,
+    zoomAnimation: true,
+    fadeAnimation: true,
+    markerZoomAnimation: true
+  });
+  L2.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    crossOrigin: true,
+    updateWhenIdle: false,
+    keepBuffer: 3
+  }).addTo(map2);
   let disposed = false, renderFrame = 0, detachTimer = 0;
   const resize = new ResizeObserver(() => {
     if (!disposed && host.isConnected) map2.invalidateSize({ animate: false });
@@ -15291,7 +15391,7 @@ async function mountLeafletSpeciesMap(container, config, options) {
     if (disposed) return;
     disposed = true;
     window.clearTimeout(detachTimer);
-    cancelAnimationFrame(renderFrame);
+    window.cancelAnimationFrame(renderFrame);
     minus.onclick = null;
     plus.onclick = null;
     resize.disconnect();
@@ -15300,9 +15400,10 @@ async function mountLeafletSpeciesMap(container, config, options) {
   };
   const observer = new MutationObserver(() => {
     window.clearTimeout(detachTimer);
-    if (!container.isConnected) detachTimer = window.setTimeout(() => {
-      if (!container.isConnected) cleanup();
-    }, 350);
+    if (!container.isConnected)
+      detachTimer = window.setTimeout(() => {
+        if (!container.isConnected) cleanup();
+      }, 350);
   });
   resize.observe(host);
   observer.observe(document.body, { childList: true, subtree: true });
@@ -15312,24 +15413,35 @@ async function mountLeafletSpeciesMap(container, config, options) {
   plus.onclick = () => {
     if (!disposed && host.isConnected) map2.zoomIn(1, { animate: true });
   };
-  const recordLayer = L2.layerGroup().addTo(map2), boundaryLayer = L2.geoJSON(void 0, { style: { color: "#00ff62", weight: 2.4, opacity: 0.95, fillColor: "#00ff00", fillOpacity: 0.18 }, interactive: false }).addTo(map2);
+  const recordLayer = L2.layerGroup().addTo(map2), boundaryLayer = L2.geoJSON(void 0, {
+    style: {
+      color: "#00ff62",
+      weight: 2.4,
+      opacity: 0.95,
+      fillColor: "#00ff00",
+      fillOpacity: 0.18
+    },
+    interactive: false
+  }).addTo(map2);
   const matched = await taxon(config.taxon);
   if (disposed || !container.isConnected) {
     cleanup();
     return;
   }
   status.setText(`${matched.name} \xB7 carregando coordenadas uma \xFAnica vez\u2026`);
-  const points = await coordinates(matched.key);
+  const points = await coordinates2(matched.key);
   if (disposed || !container.isConnected) {
     cleanup();
     return;
   }
-  status.setText(`${matched.name} \xB7 ${points.length.toLocaleString()} coordenadas em cache`);
+  status.setText(
+    `${matched.name} \xB7 ${points.length.toLocaleString()} coordenadas em cache`
+  );
   map2.invalidateSize({ animate: false });
   const drawRecords = () => {
     if (disposed || !host.isConnected) return;
-    cancelAnimationFrame(renderFrame);
-    renderFrame = requestAnimationFrame(() => {
+    window.cancelAnimationFrame(renderFrame);
+    renderFrame = window.requestAnimationFrame(() => {
       if (disposed || !host.isConnected) return;
       recordLayer.clearLayers();
       const bounds = map2.getBounds().pad(0.15), groups = /* @__PURE__ */ new Map();
@@ -15343,8 +15455,19 @@ async function mountLeafletSpeciesMap(container, config, options) {
         groups.set(key, group);
       }
       for (const group of groups.values()) {
-        const count = group.count, radius = Math.min(17, 4 + Math.sqrt(count) * 2.1), marker = L2.circleMarker([group.lat / count, group.lon / count], { radius, color: "#fff0a8", weight: 1.7, fillColor: "#e7a52c", fillOpacity: 0.88 });
-        if (count > 1) marker.bindTooltip(String(count), { permanent: true, direction: "center", className: "meta-quest-species-count" });
+        const count = group.count, radius = Math.min(17, 4 + Math.sqrt(count) * 2.1), marker = L2.circleMarker([group.lat / count, group.lon / count], {
+          radius,
+          color: "#fff0a8",
+          weight: 1.7,
+          fillColor: "#e7a52c",
+          fillOpacity: 0.88
+        });
+        if (count > 1)
+          marker.bindTooltip(String(count), {
+            permanent: true,
+            direction: "center",
+            className: "meta-quest-species-count"
+          });
         recordLayer.addLayer(marker);
       }
     });
@@ -15360,9 +15483,12 @@ async function mountLeafletSpeciesMap(container, config, options) {
         if (request !== generation) return;
         last = result;
         boundaryLayer.clearLayers();
-        if (result.geometry) boundaryLayer.addData({ type: "Feature", properties: {}, geometry: result.geometry });
+        if (result.geometry)
+          boundaryLayer.addData(result.geometry);
         host.classList.toggle("is-selectable", !!result.geometry);
-        status.setText(result.name ? `${result.name} \xB7 clique para selecionar` : `${matched.name} \xB7 ${points.length.toLocaleString()} coordenadas em cache`);
+        status.setText(
+          result.name ? `${result.name} \xB7 clique para selecionar` : `${matched.name} \xB7 ${points.length.toLocaleString()} coordenadas em cache`
+        );
       }).catch(() => void 0);
     }, 100);
   });
@@ -15373,7 +15499,15 @@ async function mountLeafletSpeciesMap(container, config, options) {
   });
   map2.on("click", (event) => {
     status.setText("Carregando todas as fotos e sons da regi\xE3o\u2026");
-    void options.selectRegion(event.latlng.lat, event.latlng.lng, last).then((result) => status.setText(`${result.name} \xB7 ${result.count.toLocaleString()} records`)).catch((error) => status.setText(`Region unavailable: ${error instanceof Error ? error.message : String(error)}`));
+    void options.selectRegion(event.latlng.lat, event.latlng.lng, last).then(
+      (result) => status.setText(
+        `${result.name} \xB7 ${result.count.toLocaleString()} records`
+      )
+    ).catch(
+      (error) => status.setText(
+        `Region unavailable: ${error instanceof Error ? error.message : String(error)}`
+      )
+    );
   });
   void attribution;
 }
@@ -15385,25 +15519,38 @@ var taxonCache = /* @__PURE__ */ new Map();
 var boundaryCache = /* @__PURE__ */ new Map();
 var regionResultCache = /* @__PURE__ */ new Map();
 function parse(source) {
-  const c = { taxon: "", source: "gbif", center: [-15, -55], zoom: 2, style: "classic.point" };
+  const c = {
+    taxon: "",
+    source: "gbif",
+    center: [-15, -55],
+    zoom: 2,
+    style: "classic.point"
+  };
   for (const line of source.split(/\r?\n/u)) {
     const m = line.match(/^([\w-]+)\s*:\s*(.*?)\s*$/u);
     if (!m) continue;
     const k = m[1].toLowerCase(), v = m[2];
     if (k === "taxon") c.taxon = v.trim().slice(0, 180);
     else if (k === "source") c.source = v.trim().toLowerCase();
-    else if (k === "style") c.style = v.trim().replace(/[^a-z0-9.-]/giu, "") || c.style;
-    else if (k === "zoom") c.zoom = Math.max(1, Math.min(8, parseInt(v, 10) || 2));
+    else if (k === "style")
+      c.style = v.trim().replace(/[^a-z0-9.-]/giu, "") || c.style;
+    else if (k === "zoom")
+      c.zoom = Math.max(1, Math.min(8, parseInt(v, 10) || 2));
     else if (k === "center") {
       const n = v.match(/-?\d+(?:\.\d+)?/gu)?.map(Number);
-      if (n && n.length >= 2 && n.every(Number.isFinite)) c.center = [n[0], n[1]];
+      if (n && n.length >= 2 && n.every(Number.isFinite))
+        c.center = [n[0], n[1]];
     }
   }
   return c;
 }
 function tile(lat, lon, z) {
   const scale = 2 ** z, r = Math.max(-85.0511, Math.min(85.0511, lat)) * Math.PI / 180;
-  return { x: Math.floor((lon + 180) / 360 * scale), y: Math.floor((1 - Math.asinh(Math.tan(r)) / Math.PI) / 2 * scale), scale };
+  return {
+    x: Math.floor((lon + 180) / 360 * scale),
+    y: Math.floor((1 - Math.asinh(Math.tan(r)) / Math.PI) / 2 * scale),
+    scale
+  };
 }
 async function decodeImage(blob) {
   if (!blob.size) return null;
@@ -15412,7 +15559,7 @@ async function decodeImage(blob) {
   } catch {
     const dataUrl = await new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result));
+      reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Image decode returned non-text data"));
       reader.onerror = () => reject(reader.error ?? new Error("Image decode failed"));
       reader.readAsDataURL(blob);
     }), image = new Image();
@@ -15428,8 +15575,17 @@ async function requestWithRetry(options, attempts = 3) {
   let lastError;
   for (let attempt = 0; attempt < attempts; attempt++) {
     try {
-      const response = await (0, import_obsidian4.requestUrl)(options);
-      if (!RETRYABLE_STATUS.has(response.status) || attempt === attempts - 1) return response;
+      const response = await (0, import_obsidian6.requestUrl)(options);
+      if (!RETRYABLE_STATUS.has(response.status) || attempt === attempts - 1)
+        return {
+          status: response.status,
+          headers: response.headers,
+          arrayBuffer: response.arrayBuffer,
+          text: response.text,
+          get json() {
+            return parseSpeciesData(response.json);
+          }
+        };
       lastError = new Error(`HTTP ${response.status}`);
     } catch (error) {
       lastError = error;
@@ -15445,9 +15601,15 @@ async function bitmap(url, optional = false) {
   if (r.status < 200 || r.status >= 300) throw new Error(`HTTP ${r.status}`);
   let image;
   try {
-    image = await decodeImage(new Blob([r.arrayBuffer], { type: String(r.headers["content-type"] || "image/png") }));
+    image = await decodeImage(
+      new Blob([r.arrayBuffer], {
+        type: String(r.headers["content-type"] || "image/png")
+      })
+    );
   } catch (error) {
-    throw new Error(`Decode failed for ${url} (HTTP ${r.status}, ${r.arrayBuffer.byteLength} bytes): ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `Decode failed for ${url} (HTTP ${r.status}, ${r.arrayBuffer.byteLength} bytes): ${error instanceof Error ? error.message : String(error)}`
+    );
   }
   if (!image && !optional) throw new Error("Empty image response");
   return image;
@@ -15475,27 +15637,53 @@ async function cachedBitmap(url, optional = false) {
   return pending;
 }
 function prefetchNeighborTiles(c) {
-  const center = tile(c.center[0], c.center[1], c.zoom), positions = [[-2, -1], [-2, 0], [2, -1], [2, 0], [-1, -2], [0, -2], [1, -2], [-1, 1], [0, 1], [1, 1]], run = () => {
+  const center = tile(c.center[0], c.center[1], c.zoom), positions = [
+    [-2, -1],
+    [-2, 0],
+    [2, -1],
+    [2, 0],
+    [-1, -2],
+    [0, -2],
+    [1, -2],
+    [-1, 1],
+    [0, 1],
+    [1, 1]
+  ], run = () => {
     for (const [ox, oy] of positions) {
       const x = ((center.x + ox) % center.scale + center.scale) % center.scale, y = Math.max(0, Math.min(center.scale - 1, center.y + oy));
-      void cachedBitmap(`https://tile.gbif.org/3857/omt/${c.zoom}/${x}/${y}@1x.png?style=gbif-dark`, true).catch(() => void 0);
+      void cachedBitmap(
+        `https://tile.gbif.org/3857/omt/${c.zoom}/${x}/${y}@1x.png?style=gbif-dark`,
+        true
+      ).catch(() => void 0);
     }
   };
-  const idle = window.requestIdleCallback;
-  if (idle) idle(run, { timeout: 1200 });
+  if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(run, { timeout: 1200 });
   else window.setTimeout(run, 260);
 }
 async function resolveTaxon(taxon2) {
   const key = taxon2.trim().toLowerCase();
-  if (!taxonCache.has(key)) taxonCache.set(key, requestWithRetry({ url: "https://api.gbif.org/v1/species/match?name=" + encodeURIComponent(taxon2) }).then((x) => x.json).catch((error) => {
-    taxonCache.delete(key);
-    throw error;
-  }));
+  if (!taxonCache.has(key))
+    taxonCache.set(
+      key,
+      requestWithRetry({
+        url: "https://api.gbif.org/v1/species/match?name=" + encodeURIComponent(taxon2)
+      }).then((x) => x.json).catch((error) => {
+        taxonCache.delete(key);
+        throw error;
+      })
+    );
   return taxonCache.get(key);
 }
 async function clusters(c, key, center) {
-  const scale = center.scale, nw = centerAfterDrag(c.center, 900, 600, c.zoom, 900, 600), se = centerAfterDrag(c.center, -900, -600, c.zoom, 900, 600), q = new URLSearchParams({ taxonKey: String(key), hasCoordinate: "true", limit: "300", decimalLatitude: Math.min(nw[0], se[0]) + "," + Math.max(nw[0], se[0]) });
-  const response = await requestWithRetry({ url: "https://api.gbif.org/v1/occurrence/search?" + q }), groups = /* @__PURE__ */ new Map();
+  const scale = center.scale, nw = centerAfterDrag(c.center, 900, 600, c.zoom, 900, 600), se = centerAfterDrag(c.center, -900, -600, c.zoom, 900, 600), q = new URLSearchParams({
+    taxonKey: String(key),
+    hasCoordinate: "true",
+    limit: "300",
+    decimalLatitude: Math.min(nw[0], se[0]) + "," + Math.max(nw[0], se[0])
+  });
+  const response = await requestWithRetry({
+    url: "https://api.gbif.org/v1/occurrence/search?" + q.toString()
+  }), groups = /* @__PURE__ */ new Map();
   for (const r of response.json.results || []) {
     const lat = Number(r.decimalLatitude), lon = Number(r.decimalLongitude);
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
@@ -15510,7 +15698,11 @@ async function clusters(c, key, center) {
     g.count++;
     groups.set(k, g);
   }
-  return [...groups.values()].map((g) => ({ x: g.x / g.count, y: g.y / g.count, count: g.count }));
+  return [...groups.values()].map((g) => ({
+    x: g.x / g.count,
+    y: g.y / g.count,
+    count: g.count
+  }));
 }
 async function raster(c) {
   const key = JSON.stringify(c);
@@ -15519,8 +15711,9 @@ async function raster(c) {
     if (!c.taxon) throw new Error("No taxon configured.");
     if (c.source !== "gbif") throw new Error(`Unsupported source: ${c.source}`);
     const taxon2 = await resolveTaxon(c.taxon), taxonKey = Number(taxon2.usageKey ?? taxon2.speciesKey);
-    if (!Number.isFinite(taxonKey)) throw new Error(`Taxon not found: ${c.taxon}`);
-    const canvas = document.createElement("canvas");
+    if (!Number.isFinite(taxonKey))
+      throw new Error(`Taxon not found: ${c.taxon}`);
+    const canvas = createEl("canvas");
     canvas.width = 900;
     canvas.height = 600;
     const ctx = canvas.getContext("2d", { alpha: false });
@@ -15528,12 +15721,21 @@ async function raster(c) {
     ctx.fillStyle = "#07111d";
     ctx.fillRect(0, 0, 900, 600);
     const center = tile(c.center[0], c.center[1], c.zoom), jobs = [];
-    for (let row = 0; row < 2; row++) for (let column = 0; column < 3; column++) {
-      const x = ((center.x + column - 1) % center.scale + center.scale) % center.scale, y = Math.max(0, Math.min(center.scale - 1, center.y + row - 1)), base = `https://tile.gbif.org/3857/omt/${c.zoom}/${x}/${y}@1x.png?style=gbif-dark`, density = `https://api.gbif.org/v2/map/occurrence/density/${c.zoom}/${x}/${y}@1x.png?srs=EPSG:3857&taxonKey=${taxonKey}&style=${encodeURIComponent(c.style)}`;
-      jobs.push(Promise.all([cachedBitmap(base, true), cachedBitmap(density, true)]).then(([b, d]) => ({ column, row, b, d })).catch(() => ({ column, row, b: null, d: null })));
-    }
-    const [tiles, points] = await Promise.all([Promise.all(jobs), clusters(c, taxonKey, center).catch(() => [])]), loadedTiles = tiles.filter((tile2) => tile2.b).length;
-    if (!loadedTiles) throw new Error("N\xE3o foi poss\xEDvel baixar os tiles do mapa ap\xF3s 3 tentativas.");
+    for (let row = 0; row < 2; row++)
+      for (let column = 0; column < 3; column++) {
+        const x = ((center.x + column - 1) % center.scale + center.scale) % center.scale, y = Math.max(0, Math.min(center.scale - 1, center.y + row - 1)), base = `https://tile.gbif.org/3857/omt/${c.zoom}/${x}/${y}@1x.png?style=gbif-dark`, density = `https://api.gbif.org/v2/map/occurrence/density/${c.zoom}/${x}/${y}@1x.png?srs=EPSG:3857&taxonKey=${taxonKey}&style=${encodeURIComponent(c.style)}`;
+        jobs.push(
+          Promise.all([cachedBitmap(base, true), cachedBitmap(density, true)]).then(([b, d]) => ({ column, row, b, d })).catch(() => ({ column, row, b: null, d: null }))
+        );
+      }
+    const [tiles, points] = await Promise.all([
+      Promise.all(jobs),
+      clusters(c, taxonKey, center).catch(() => [])
+    ]), loadedTiles = tiles.filter((tile2) => tile2.b).length;
+    if (!loadedTiles)
+      throw new Error(
+        "N\xE3o foi poss\xEDvel baixar os tiles do mapa ap\xF3s 3 tentativas."
+      );
     for (const t of tiles) {
       if (!t.b) continue;
       ctx.drawImage(t.b, t.column * 300, t.row * 300, 300, 300);
@@ -15566,7 +15768,11 @@ async function raster(c) {
     ctx.fillText(name, 20, 38);
     ctx.fillStyle = "#aabbd0";
     ctx.font = "18px system-ui";
-    ctx.fillText("GBIF occurrence regions \xB7 select a marker for photos and sounds", 20, 68);
+    ctx.fillText(
+      "GBIF occurrence regions \xB7 select a marker for photos and sounds",
+      20,
+      68
+    );
     ctx.fillStyle = "rgba(3,8,16,.78)";
     ctx.fillRect(0, 566, 900, 34);
     ctx.fillStyle = "#9badc2";
@@ -15574,7 +15780,11 @@ async function raster(c) {
     ctx.textAlign = "right";
     ctx.fillText("Map \xA9 OSM \xB7 data \xA9 GBIF", 884, 588);
     prefetchNeighborTiles(c);
-    return { dataUrl: canvas.toDataURL("image/webp", 0.82), name, degraded: loadedTiles < tiles.length };
+    return {
+      dataUrl: canvas.toDataURL("image/webp", 0.82),
+      name,
+      degraded: loadedTiles < tiles.length
+    };
   })();
   cache.set(key, pending);
   while (cache.size > 10) cache.delete(cache.keys().next().value);
@@ -15601,7 +15811,10 @@ function boundaryPixel(c, lon, lat) {
   while (x < center.x - 1) x += scale;
   while (x > center.x + 2) x -= scale;
   const y = (1 - Math.asinh(Math.tan(r)) / Math.PI) / 2 * scale;
-  return { x: (x - (center.x - 1)) / 3 * 900, y: (y - (center.y - 1)) / 2 * 600 };
+  return {
+    x: (x - (center.x - 1)) / 3 * 900,
+    y: (y - (center.y - 1)) / 2 * 600
+  };
 }
 function drawBoundary(canvas, c, geometry) {
   const ctx = canvas.getContext("2d");
@@ -15610,13 +15823,14 @@ function drawBoundary(canvas, c, geometry) {
   if (!geometry) return;
   const polygons = geometry.type === "Polygon" ? [geometry.coordinates] : geometry.coordinates;
   ctx.beginPath();
-  for (const polygon of polygons) for (const ring of polygon) {
-    ring.forEach(([lon, lat], index) => {
-      const p = boundaryPixel(c, lon, lat);
-      index ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y);
-    });
-    ctx.closePath();
-  }
+  for (const polygon of polygons)
+    for (const ring of polygon) {
+      ring.forEach(([lon, lat], index) => {
+        const p = boundaryPixel(c, lon, lat);
+        index ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y);
+      });
+      ctx.closePath();
+    }
   ctx.fillStyle = "rgba(0,255,0,0.33)";
   ctx.strokeStyle = "rgb(0,170,0)";
   ctx.lineWidth = 3;
@@ -15632,16 +15846,37 @@ async function loadBoundary(lat, lon) {
     return hit;
   }
   const pending = (async () => {
-    const q = new URLSearchParams({ format: "jsonv2", lat: String(lat), lon: String(lon), zoom: "5", addressdetails: "1", polygon_geojson: "1", polygon_threshold: "0.01" }), response = await requestWithRetry({ url: "https://nominatim.openstreetmap.org/reverse?" + q, headers: { "Accept-Language": "en", "User-Agent": "MetaQuestSync/0.1" } }), json2 = response.json || {}, geometry = json2.geojson, address = json2.address || {};
-    if (!geometry || geometry.type !== "Polygon" && geometry.type !== "MultiPolygon") return null;
-    const state = String(address.state || address.region || address.province || "").trim(), country = String(address.country || "").trim();
-    return { geometry, name: state || country || String(json2.name || json2.display_name || "").split(",")[0], countryCode: String(address.country_code || "").toUpperCase(), country, level: state ? "state" : "country" };
+    const q = new URLSearchParams({
+      format: "jsonv2",
+      lat: String(lat),
+      lon: String(lon),
+      zoom: "5",
+      addressdetails: "1",
+      polygon_geojson: "1",
+      polygon_threshold: "0.01"
+    }), response = await requestWithRetry({
+      url: "https://nominatim.openstreetmap.org/reverse?" + q.toString(),
+      headers: { "Accept-Language": "en", "User-Agent": "MetaQuestSync/0.1" }
+    }), json2 = response.json, geometry = json2.geojson, address = json2.address || {};
+    if (!geometry || geometry.type !== "Polygon" && geometry.type !== "MultiPolygon")
+      return null;
+    const state = String(
+      address.state || address.region || address.province || ""
+    ).trim(), country = String(address.country || "").trim();
+    return {
+      geometry,
+      name: state || country || String(json2.name || json2.display_name || "").split(",")[0],
+      countryCode: String(address.country_code || "").toUpperCase(),
+      country,
+      level: state ? "state" : "country"
+    };
   })().catch((error) => {
     boundaryCache.delete(key);
     throw error;
   });
   boundaryCache.set(key, pending);
-  while (boundaryCache.size > 96) boundaryCache.delete(boundaryCache.keys().next().value);
+  while (boundaryCache.size > 96)
+    boundaryCache.delete(boundaryCache.keys().next().value);
   return pending;
 }
 function regionLabel(results, lat, lon) {
@@ -15654,17 +15889,27 @@ function regionLabel(results, lat, lon) {
 }
 function mapCoordinate(c, u, v) {
   const center = tile(c.center[0], c.center[1], c.zoom), wx = center.x - 1 + Math.max(0, Math.min(1, u)) * 3, wy = center.y - 1 + Math.max(0, Math.min(1, v)) * 2;
-  return { lon: wx / center.scale * 360 - 180, lat: Math.atan(Math.sinh(Math.PI * (1 - 2 * wy / center.scale))) * 180 / Math.PI };
+  return {
+    lon: wx / center.scale * 360 - 180,
+    lat: Math.atan(Math.sinh(Math.PI * (1 - 2 * wy / center.scale))) * 180 / Math.PI
+  };
 }
 var REGION_PAGE_SIZE = 300;
 var REGION_RECORD_CAP = 9e3;
 async function fetchRegionAt(c, lat, lon, region = null) {
   const radius = Math.max(0.35, 55 / 2 ** c.zoom);
-  const match = await requestWithRetry({ url: `https://api.gbif.org/v1/species/match?name=${encodeURIComponent(c.taxon)}` }), key = Number(match.json.usageKey ?? match.json.speciesKey), scientificName = String(match.json.scientificName || c.taxon);
+  const match = await requestWithRetry({
+    url: `https://api.gbif.org/v1/species/match?name=${encodeURIComponent(c.taxon)}`
+  }), key = Number(match.json.usageKey ?? match.json.speciesKey), scientificName = String(match.json.scientificName || c.taxon);
   const load = async (type) => {
-    const base = { taxon_key: String(key), has_coordinate: "true", media_type: type };
+    const base = {
+      taxon_key: String(key),
+      has_coordinate: "true",
+      media_type: type
+    };
     if (region?.countryCode) base.country = region.countryCode;
-    if (region?.level === "state" && region.name) base.state_province = region.name;
+    if (region?.level === "state" && region.name)
+      base.state_province = region.name;
     if (!region?.name) {
       base.decimal_latitude = `${Math.max(-89.9, lat - radius)},${Math.min(89.9, lat + radius)}`;
       base.decimal_longitude = `${Math.max(-179.9, lon - radius)},${Math.min(179.9, lon + radius)}`;
@@ -15672,7 +15917,13 @@ async function fetchRegionAt(c, lat, lon, region = null) {
     const results = [];
     let offset = 0, count = 0;
     do {
-      const params = new URLSearchParams({ ...base, limit: String(REGION_PAGE_SIZE), offset: String(offset) }), page = (await requestWithRetry({ url: "https://api.gbif.org/v1/occurrence/search?" + params })).json;
+      const params = new URLSearchParams({
+        ...base,
+        limit: String(REGION_PAGE_SIZE),
+        offset: String(offset)
+      }), page = (await requestWithRetry({
+        url: "https://api.gbif.org/v1/occurrence/search?" + params.toString()
+      })).json;
       count = Number(page.count) || 0;
       results.push(...page.results || []);
       if (!page.results?.length) break;
@@ -15680,11 +15931,23 @@ async function fetchRegionAt(c, lat, lon, region = null) {
     } while (offset < count && offset < REGION_RECORD_CAP);
     return { count, results, truncated: offset < count };
   };
-  const [photosJson, soundsJson] = await Promise.all([load("StillImage"), load("Sound")]), all = [...photosJson.results || [], ...soundsJson.results || []];
-  const municipality = (record) => String(record.municipality || record.county || record.locality || "").trim();
+  const [photosJson, soundsJson] = await Promise.all([
+    load("StillImage"),
+    load("Sound")
+  ]), all = [...photosJson.results || [], ...soundsJson.results || []];
+  const municipality = (record) => String(
+    record.municipality || record.county || record.locality || ""
+  ).trim();
   const collect = (json2, type, limit) => {
     const output = [];
-    for (const record of json2.results || []) for (const media of record.media || []) if (media.type === type && output.length < limit) output.push({ ...media, municipality: municipality(record), place: record.locality || record.stateProvince || record.country || "" });
+    for (const record of json2.results || [])
+      for (const media of record.media || [])
+        if (media.type === type && output.length < limit)
+          output.push({
+            ...media,
+            municipality: municipality(record),
+            place: record.locality || record.stateProvince || record.country || ""
+          });
     return output;
   };
   const counts = /* @__PURE__ */ new Map();
@@ -15699,7 +15962,17 @@ async function fetchRegionAt(c, lat, lon, region = null) {
     counts.set(name, item);
   }
   const locationName = region?.name ? [region.name, region.country].filter(Boolean).join(", ") : regionLabel(all, lat, lon);
-  return { taxon: scientificName, name: locationName, lat, lon, count: Math.max(photosJson.count || 0, soundsJson.count || 0), photos: collect(photosJson, "StillImage", 120), sounds: collect(soundsJson, "Sound", 240), municipalities: [...counts.values()].sort((a, b) => b.photos + b.sounds - (a.photos + a.sounds)).slice(0, 120), truncated: Boolean(photosJson.truncated || soundsJson.truncated) };
+  return {
+    taxon: scientificName,
+    name: locationName,
+    lat,
+    lon,
+    count: Math.max(photosJson.count || 0, soundsJson.count || 0),
+    photos: collect(photosJson, "StillImage", 120),
+    sounds: collect(soundsJson, "Sound", 240),
+    municipalities: [...counts.values()].sort((a, b) => b.photos + b.sounds - (a.photos + a.sounds)).slice(0, 120),
+    truncated: Boolean(photosJson.truncated || soundsJson.truncated)
+  };
 }
 async function fetchRegion(c, u, v, region = null) {
   const point = mapCoordinate(c, u, v);
@@ -15718,7 +15991,8 @@ async function loadRegion(c, u, v, region = null) {
     throw error;
   });
   regionResultCache.set(key, pending);
-  while (regionResultCache.size > 24) regionResultCache.delete(regionResultCache.keys().next().value);
+  while (regionResultCache.size > 24)
+    regionResultCache.delete(regionResultCache.keys().next().value);
   return pending;
 }
 async function loadRegionAt(c, lat, lon, region = null) {
@@ -15734,39 +16008,74 @@ async function loadRegionAt(c, lat, lon, region = null) {
     throw error;
   });
   regionResultCache.set(key, pending);
-  while (regionResultCache.size > 24) regionResultCache.delete(regionResultCache.keys().next().value);
+  while (regionResultCache.size > 24)
+    regionResultCache.delete(regionResultCache.keys().next().value);
   return pending;
 }
 async function optimizedImageUrl(url, maxWidth = 1920, maxHeight = 1080) {
-  const response = await (0, import_obsidian4.requestUrl)({ url });
-  if (response.status < 200 || response.status >= 300) throw new Error(`Image HTTP ${response.status}`);
-  const blob = new Blob([response.arrayBuffer], { type: String(response.headers["content-type"] || "image/jpeg") }), source = await createImageBitmap(blob);
+  const response = await (0, import_obsidian6.requestUrl)({ url });
+  if (response.status < 200 || response.status >= 300)
+    throw new Error(`Image HTTP ${response.status}`);
+  const blob = new Blob([response.arrayBuffer], {
+    type: String(response.headers["content-type"] || "image/jpeg")
+  }), source = await createImageBitmap(blob);
   try {
-    const scale = Math.min(1, maxWidth / source.width, maxHeight / source.height);
+    const scale = Math.min(
+      1,
+      maxWidth / source.width,
+      maxHeight / source.height
+    );
     if (scale >= 1) return URL.createObjectURL(blob);
-    const width = Math.max(1, Math.round(source.width * scale)), height = Math.max(1, Math.round(source.height * scale)), resized = await createImageBitmap(source, { resizeWidth: width, resizeHeight: height, resizeQuality: "high" }), canvas = document.createElement("canvas");
+    const width = Math.max(1, Math.round(source.width * scale)), height = Math.max(1, Math.round(source.height * scale)), resized = await createImageBitmap(source, {
+      resizeWidth: width,
+      resizeHeight: height,
+      resizeQuality: "high"
+    }), canvas = createEl("canvas");
     canvas.width = width;
     canvas.height = height;
     canvas.getContext("2d")?.drawImage(resized, 0, 0);
     resized.close();
-    const output = await new Promise((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("Image resize failed")), "image/webp", 0.84));
+    const output = await new Promise(
+      (resolve, reject) => canvas.toBlob(
+        (value) => value ? resolve(value) : reject(new Error("Image resize failed")),
+        "image/webp",
+        0.84
+      )
+    );
     return URL.createObjectURL(output);
   } finally {
     source.close();
   }
 }
-var KNOWN_VOCAL_RANGES = { "pitangus sulphuratus": { low: [2600, 2800], high: [3500, 4200], note: "Faixa de refer\xEAncia; ru\xEDdo urbano, clima e geografia podem deslocar os valores observados." } };
+var KNOWN_VOCAL_RANGES = {
+  "pitangus sulphuratus": {
+    low: [2600, 2800],
+    high: [3500, 4200],
+    note: "Faixa de refer\xEAncia; ru\xEDdo urbano, clima e geografia podem deslocar os valores observados."
+  }
+};
 function showRegion(container, r, options) {
-  let panel = container.querySelector(".meta-quest-species-region");
+  let panel = container.querySelector(
+    ".meta-quest-species-region"
+  );
   if (!panel) panel = container.createDiv({ cls: "meta-quest-species-region" });
   panel.empty();
-  panel.createEl("strong", { text: `${r.name} \xB7 ${r.count.toLocaleString()} records` });
+  panel.createEl("strong", {
+    text: `${r.name} \xB7 ${r.count.toLocaleString()} records`
+  });
   const dashboard = panel.createDiv({ cls: "meta-quest-species-dashboard" }), known = KNOWN_VOCAL_RANGES[String(r.taxon || "").toLowerCase().match(/^[a-z]+\s+[a-z]+/)?.[0] || ""], range = dashboard.createDiv({ cls: "meta-quest-species-range" });
   range.createEl("strong", { text: "Perfil ac\xFAstico \xB7 " + r.taxon });
-  range.createDiv({ text: known ? `m\xEDnima t\xEDpica ${(known.low[0] / 1e3).toFixed(1)}\u2013${(known.low[1] / 1e3).toFixed(1)} kHz \xB7 m\xE1xima t\xEDpica ${(known.high[0] / 1e3).toFixed(1)}\u2013${(known.high[1] / 1e3).toFixed(1)} kHz` : "Faixa de refer\xEAncia ainda n\xE3o catalogada; estimando pelas grava\xE7\xF5es dispon\xEDveis\u2026" });
+  range.createDiv({
+    text: known ? `m\xEDnima t\xEDpica ${(known.low[0] / 1e3).toFixed(1)}\u2013${(known.low[1] / 1e3).toFixed(1)} kHz \xB7 m\xE1xima t\xEDpica ${(known.high[0] / 1e3).toFixed(1)}\u2013${(known.high[1] / 1e3).toFixed(1)} kHz` : "Faixa de refer\xEAncia ainda n\xE3o catalogada; estimando pelas grava\xE7\xF5es dispon\xEDveis\u2026"
+  });
   if (known) range.createEl("small", { text: known.note });
-  const empirical = range.createDiv({ cls: "meta-quest-species-empirical", text: "Faixa emp\xEDrica: analisando grava\xE7\xF5es\u2026" });
-  const municipalities = dashboard.createDiv({ cls: "meta-quest-species-municipalities" });
+  const empirical = range.createDiv({
+    cls: "meta-quest-species-empirical",
+    text: "Faixa emp\xEDrica: analisando grava\xE7\xF5es\u2026"
+  });
+  const municipalities = dashboard.createDiv({
+    cls: "meta-quest-species-municipalities"
+  });
   municipalities.createEl("strong", { text: "Munic\xEDpios / localidades" });
   const chips = municipalities.createDiv({ cls: "meta-quest-species-chips" });
   let selected = "";
@@ -15776,18 +16085,34 @@ function showRegion(container, r, options) {
     const photos = selected ? r.photos.filter((x) => x.municipality === selected) : r.photos.slice(0, 6), sounds = selected ? r.sounds.filter((x) => x.municipality === selected) : r.sounds.slice(0, 24);
     const gallery = mediaHost.createDiv({ cls: "meta-quest-species-gallery" });
     for (const media of photos) {
-      const a = gallery.createEl("a", { href: media.references || media.identifier });
+      const a = gallery.createEl("a", {
+        href: media.references || media.identifier
+      });
       a.target = "_blank";
-      const image = a.createEl("img", { attr: { loading: "lazy", alt: media.creator || "Species photo" } });
+      const image = a.createEl("img", {
+        attr: { loading: "lazy", alt: media.creator || "Species photo" }
+      });
       void optimizedImageUrl(media.identifier, 1280, 720).then((url) => {
         image.src = url;
-        image.addEventListener("load", () => URL.revokeObjectURL(url), { once: true });
+        image.addEventListener("load", () => URL.revokeObjectURL(url), {
+          once: true
+        });
       }).catch(() => image.alt = "Species image unavailable");
     }
     for (const media of sounds) {
       const row = mediaHost.createDiv({ cls: "meta-quest-species-sound" });
-      row.createSpan({ text: (media.creator || "GBIF recording") + (media.municipality ? " \xB7 " + media.municipality : "") });
-      const player = row.createEl("audio", { attr: { src: media.identifier, controls: "", preload: "metadata" } }), trailButton = row.createEl("button", { text: "Rastro 3D", attr: { "aria-label": "Abrir identidade espectral em 3D" } }), frequency = row.createSpan({ cls: "meta-quest-species-frequency", text: "Faixa vocal: analisar grava\xE7\xE3o" });
+      row.createSpan({
+        text: (media.creator || "GBIF recording") + (media.municipality ? " \xB7 " + media.municipality : "")
+      });
+      const player = row.createEl("audio", {
+        attr: { src: media.identifier, controls: "", preload: "metadata" }
+      }), trailButton = row.createEl("button", {
+        text: "Rastro 3D",
+        attr: { "aria-label": "Abrir identidade espectral em 3D" }
+      }), frequency = row.createSpan({
+        cls: "meta-quest-species-frequency",
+        text: "Faixa vocal: analisar grava\xE7\xE3o"
+      });
       let trail = null;
       trailButton.onclick = () => {
         if (trail) {
@@ -15796,48 +16121,89 @@ function showRegion(container, r, options) {
           trailButton.setText("Rastro 3D");
           return;
         }
-        for (const other of Array.from(document.querySelectorAll("audio"))) if (other !== player && !other.paused) other.pause();
+        for (const other of Array.from(
+          document.querySelectorAll("audio")
+        ))
+          if (other !== player && !other.paused) other.pause();
         if (player.paused) void player.play().catch(() => void 0);
-        trail = mountDesktopSpectralTrail(player, row, () => {
-          if (!options.analyzeAudio) throw new Error("Analisador espectral indispon\xEDvel.");
-          return options.analyzeAudio(media.identifier);
-        }, { storageKey: "species:" + media.identifier, onFrequencyRange: (value) => frequency.setText("Faixa vocal estimada: " + value.minHz.toLocaleString() + "\u2013" + value.maxHz.toLocaleString() + " Hz") });
+        trail = mountDesktopSpectralTrail(
+          player,
+          row,
+          () => {
+            if (!options.analyzeAudio)
+              throw new Error("Analisador espectral indispon\xEDvel.");
+            return options.analyzeAudio(media.identifier);
+          },
+          {
+            storageKey: "species:" + media.identifier,
+            onFrequencyRange: (value) => frequency.setText(
+              "Faixa vocal estimada: " + value.minHz.toLocaleString() + "\u2013" + value.maxHz.toLocaleString() + " Hz"
+            )
+          }
+        );
         trailButton.setText("Fechar 3D");
       };
     }
-    if (!photos.length && !sounds.length) mediaHost.createDiv({ text: "Nenhuma m\xEDdia encontrada para esta localidade na amostra atual." });
+    if (!photos.length && !sounds.length)
+      mediaHost.createDiv({
+        text: "Nenhuma m\xEDdia encontrada para esta localidade na amostra atual."
+      });
   };
   const all = chips.createEl("button", { text: "Todos" });
   all.addClass("is-active");
   all.onclick = () => {
     selected = "";
-    for (const x of Array.from(chips.querySelectorAll("button"))) x.removeClass("is-active");
+    for (const x of Array.from(chips.querySelectorAll("button")))
+      x.removeClass("is-active");
     all.addClass("is-active");
     renderMedia();
   };
   for (const item of r.municipalities || []) {
-    const button = chips.createEl("button", { text: `${item.name} \xB7 \u{1F4F7} ${item.photos} \xB7 \u266A ${item.sounds}` });
+    const button = chips.createEl("button", {
+      text: `${item.name} \xB7 \u{1F4F7} ${item.photos} \xB7 \u266A ${item.sounds}`
+    });
     button.onclick = () => {
       selected = item.name;
-      for (const x of Array.from(chips.querySelectorAll("button"))) x.removeClass("is-active");
+      for (const x of Array.from(chips.querySelectorAll("button")))
+        x.removeClass("is-active");
       button.addClass("is-active");
       renderMedia();
     };
   }
   renderMedia();
-  if (options.analyzeAudio && r.sounds?.length) void Promise.allSettled(r.sounds.slice(0, 3).map((x) => options.analyzeAudio(x.identifier))).then((results) => {
-    const ranges = results.flatMap((x) => x.status === "fulfilled" ? spectralFrequencyRange(x.value) ? [spectralFrequencyRange(x.value)] : [] : []);
-    if (ranges.length) empirical.setText(`Faixa emp\xEDrica (${ranges.length} grava\xE7\xF5es): ${Math.min(...ranges.map((x) => x.minHz)).toLocaleString()}\u2013${Math.max(...ranges.map((x) => x.maxHz)).toLocaleString()} Hz`);
-    else empirical.setText("Faixa emp\xEDrica indispon\xEDvel para esta amostra.");
-  });
+  if (options.analyzeAudio && r.sounds?.length)
+    void Promise.allSettled(
+      r.sounds.slice(0, 3).map((x) => options.analyzeAudio(x.identifier))
+    ).then((results) => {
+      const ranges = results.flatMap(
+        (x) => x.status === "fulfilled" ? spectralFrequencyRange(x.value) ? [spectralFrequencyRange(x.value)] : [] : []
+      );
+      if (ranges.length)
+        empirical.setText(
+          `Faixa emp\xEDrica (${ranges.length} grava\xE7\xF5es): ${Math.min(...ranges.map((x) => x.minHz)).toLocaleString()}\u2013${Math.max(...ranges.map((x) => x.maxHz)).toLocaleString()} Hz`
+        );
+      else empirical.setText("Faixa emp\xEDrica indispon\xEDvel para esta amostra.");
+    });
   else empirical.setText("Faixa emp\xEDrica dispon\xEDvel ao analisar uma grava\xE7\xE3o.");
 }
 async function renderRasterSpeciesMap(source, container, options = {}) {
   const c = parse(source);
   container.addClass("meta-quest-species-map");
-  const bar = container.createDiv({ cls: "meta-quest-species-map-toolbar" }), status = bar.createSpan({ text: "Loading GBIF occurrence map\u2026" }), minus = bar.createEl("button", { text: "\u2212", attr: { "aria-label": "Zoom out" } }), plus = bar.createEl("button", { text: "+", attr: { "aria-label": "Zoom in" } }), viewport = container.createDiv({ cls: "meta-quest-species-map-viewport" }), image = viewport.createEl("img", { cls: "meta-quest-species-map-image", attr: { alt: "Species occurrence map", draggable: "false" } }), boundary = viewport.createEl("canvas", { cls: "meta-quest-species-boundary", attr: { width: "900", height: "600", "aria-hidden": "true" } });
-  (0, import_obsidian4.setIcon)(minus, "zoom-out");
-  (0, import_obsidian4.setIcon)(plus, "zoom-in");
+  const bar = container.createDiv({ cls: "meta-quest-species-map-toolbar" }), status = bar.createSpan({ text: "Loading GBIF occurrence map\u2026" }), minus = bar.createEl("button", {
+    text: "\u2212",
+    attr: { "aria-label": "Zoom out" }
+  }), plus = bar.createEl("button", {
+    text: "+",
+    attr: { "aria-label": "Zoom in" }
+  }), viewport = container.createDiv({ cls: "meta-quest-species-map-viewport" }), image = viewport.createEl("img", {
+    cls: "meta-quest-species-map-image",
+    attr: { alt: "Species occurrence map", draggable: "false" }
+  }), boundary = viewport.createEl("canvas", {
+    cls: "meta-quest-species-boundary",
+    attr: { width: "900", height: "600", "aria-hidden": "true" }
+  });
+  (0, import_obsidian6.setIcon)(minus, "zoom-out");
+  (0, import_obsidian6.setIcon)(plus, "zoom-in");
   image.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopImmediatePropagation();
@@ -15845,7 +16211,13 @@ async function renderRasterSpeciesMap(source, container, options = {}) {
   let generation = 0, selectedBoundary = null, hoveredRegion = null, hoverGeneration = 0, hoverTimer = null;
   const settleViewport = () => {
     viewport.removeClass("is-zooming");
-    viewport.setCssProps({ "--map-shift-x": "0px", "--map-shift-y": "0px", "--map-scale": "1", "--map-origin-x": "50%", "--map-origin-y": "50%" });
+    viewport.setCssProps({
+      "--map-shift-x": "0px",
+      "--map-shift-y": "0px",
+      "--map-scale": "1",
+      "--map-origin-x": "50%",
+      "--map-origin-y": "50%"
+    });
   };
   const update = async () => {
     const current = ++generation;
@@ -15867,13 +16239,17 @@ async function renderRasterSpeciesMap(source, container, options = {}) {
       settleViewport();
       drawBoundary(boundary, c, selectedBoundary);
       boundary.removeClass("is-hidden");
-      status.setText(result.degraded ? `${result.name} \xB7 mapa parcial; mova para tentar novamente` : `${result.name} \xB7 zoom ${c.zoom} \xB7 drag to pan`);
+      status.setText(
+        result.degraded ? `${result.name} \xB7 mapa parcial; mova para tentar novamente` : `${result.name} \xB7 zoom ${c.zoom} \xB7 drag to pan`
+      );
     } catch (e) {
       if (current === generation) {
         settleViewport();
         boundary.removeClass("is-hidden");
         drawBoundary(boundary, c, selectedBoundary);
-        status.setText(`Map unavailable: ${e instanceof Error ? e.message : String(e)}`);
+        status.setText(
+          `Map unavailable: ${e instanceof Error ? e.message : String(e)}`
+        );
       }
     }
   };
@@ -15890,7 +16266,11 @@ async function renderRasterSpeciesMap(source, container, options = {}) {
     if (next === c.zoom) return;
     const scale = next > c.zoom ? 1.72 : 0.62;
     c.zoom = next;
-    viewport.setCssProps({ "--map-origin-x": `${originX}%`, "--map-origin-y": `${originY}%`, "--map-scale": String(scale) });
+    viewport.setCssProps({
+      "--map-origin-x": `${originX}%`,
+      "--map-origin-y": `${originY}%`,
+      "--map-scale": String(scale)
+    });
     viewport.addClass("is-zooming");
     boundary.addClass("is-hidden");
     scheduleUpdate();
@@ -15900,7 +16280,14 @@ async function renderRasterSpeciesMap(source, container, options = {}) {
   let drag = null;
   image.addEventListener("pointerdown", (event) => {
     if (event.button !== 0 && event.pointerType === "mouse") return;
-    drag = { id: event.pointerId, x: event.clientX, y: event.clientY, dx: 0, dy: 0, moved: false };
+    drag = {
+      id: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      dx: 0,
+      dy: 0,
+      moved: false
+    };
     image.setPointerCapture(event.pointerId);
     image.addClass("is-dragging");
     event.preventDefault();
@@ -15916,7 +16303,8 @@ async function renderRasterSpeciesMap(source, container, options = {}) {
           if (request !== hoverGeneration) return;
           hoveredRegion = region ? { u, v, ...region } : null;
           drawBoundary(boundary, c, region?.geometry ?? selectedBoundary);
-          if (hoveredRegion?.name) status.setText(hoveredRegion.name + " \xB7 click to select");
+          if (hoveredRegion?.name)
+            status.setText(hoveredRegion.name + " \xB7 click to select");
         });
       }, 90);
       return;
@@ -15925,7 +16313,11 @@ async function renderRasterSpeciesMap(source, container, options = {}) {
     drag.dx = event.clientX - drag.x;
     drag.dy = event.clientY - drag.y;
     if (Math.hypot(drag.dx, drag.dy) > 7) drag.moved = true;
-    viewport.setCssProps({ "--map-shift-x": `${drag.dx}px`, "--map-shift-y": `${drag.dy}px`, "--map-scale": "1.025" });
+    viewport.setCssProps({
+      "--map-shift-x": `${drag.dx}px`,
+      "--map-shift-y": `${drag.dy}px`,
+      "--map-scale": "1.025"
+    });
     event.preventDefault();
   });
   const finish = (event) => {
@@ -15936,11 +16328,21 @@ async function renderRasterSpeciesMap(source, container, options = {}) {
     drag = null;
     image.removeClass("is-dragging");
     if (!moved) {
-      viewport.setCssProps({ "--map-shift-x": "0px", "--map-shift-y": "0px", "--map-scale": "1" });
+      viewport.setCssProps({
+        "--map-shift-x": "0px",
+        "--map-shift-y": "0px",
+        "--map-scale": "1"
+      });
       const bounds = image.getBoundingClientRect();
-      let marker = viewport.querySelector(".meta-quest-species-selection");
-      if (!marker) marker = viewport.createSpan({ cls: "meta-quest-species-selection" });
-      marker.setCssProps({ "--marker-x": (event.clientX - bounds.left) / bounds.width * 100 + "%", "--marker-y": (event.clientY - bounds.top) / bounds.height * 100 + "%" });
+      let marker = viewport.querySelector(
+        ".meta-quest-species-selection"
+      );
+      if (!marker)
+        marker = viewport.createSpan({ cls: "meta-quest-species-selection" });
+      marker.setCssProps({
+        "--marker-x": (event.clientX - bounds.left) / bounds.width * 100 + "%",
+        "--marker-y": (event.clientY - bounds.top) / bounds.height * 100 + "%"
+      });
       status.setText("Loading regional photos and sounds\u2026");
       const clickU = (event.clientX - bounds.left) / bounds.width, clickV = (event.clientY - bounds.top) / bounds.height, selected = hoveredRegion;
       void loadRegion(c, selected?.u ?? clickU, selected?.v ?? clickV, selected).then((r) => {
@@ -15950,10 +16352,21 @@ async function renderRasterSpeciesMap(source, container, options = {}) {
           drawBoundary(boundary, c, selectedBoundary);
         });
         status.setText(`${r.name} \xB7 ${r.count.toLocaleString()} records`);
-      }).catch((e) => status.setText(`Region unavailable: ${e instanceof Error ? e.message : String(e)}`));
+      }).catch(
+        (e) => status.setText(
+          `Region unavailable: ${e instanceof Error ? e.message : String(e)}`
+        )
+      );
       return;
     }
-    c.center = centerAfterDrag(c.center, dx, dy, c.zoom, image.clientWidth, image.clientHeight);
+    c.center = centerAfterDrag(
+      c.center,
+      dx,
+      dy,
+      c.zoom,
+      image.clientWidth,
+      image.clientHeight
+    );
     scheduleUpdate();
   };
   image.addEventListener("pointerup", finish);
@@ -15964,52 +16377,72 @@ async function renderRasterSpeciesMap(source, container, options = {}) {
     if (hoverTimer !== null) window.clearTimeout(hoverTimer);
     drawBoundary(boundary, c, selectedBoundary);
   });
-  image.addEventListener("wheel", (event) => {
-    event.preventDefault();
-    const bounds = image.getBoundingClientRect(), originX = (event.clientX - bounds.left) / bounds.width * 100, originY = (event.clientY - bounds.top) / bounds.height * 100;
-    zoomTo(c.zoom + (event.deltaY < 0 ? 1 : -1), originX, originY);
-  }, { passive: false });
+  image.addEventListener(
+    "wheel",
+    (event) => {
+      event.preventDefault();
+      const bounds = image.getBoundingClientRect(), originX = (event.clientX - bounds.left) / bounds.width * 100, originY = (event.clientY - bounds.top) / bounds.height * 100;
+      zoomTo(c.zoom + (event.deltaY < 0 ? 1 : -1), originX, originY);
+    },
+    { passive: false }
+  );
   await update();
 }
 async function renderSpeciesMap(source, container, options = {}) {
   const c = parse(source);
   try {
-    await mountLeafletSpeciesMap(container, { taxon: c.taxon, center: c.center, zoom: c.zoom }, { resolveBoundary: async (lat, lon) => await loadBoundary(lat, lon) ?? { geometry: null, name: "" }, selectRegion: async (lat, lon, region) => {
-      const result = await loadRegionAt(c, lat, lon, region);
-      showRegion(container, result, options);
-      return { name: result.name, count: result.count };
-    } });
+    await mountLeafletSpeciesMap(
+      container,
+      { taxon: c.taxon, center: c.center, zoom: c.zoom },
+      {
+        resolveBoundary: async (lat, lon) => await loadBoundary(lat, lon) ?? { geometry: null, name: "" },
+        selectRegion: async (lat, lon, region) => {
+          const result = await loadRegionAt(c, lat, lon, region);
+          showRegion(container, result, options);
+          return { name: result.name, count: result.count };
+        }
+      }
+    );
   } catch (error) {
-    window.__metaQuestVectorMapError = error instanceof Error ? error.stack || error.message : String(error);
     container.empty();
-    console.warn("Global species map unavailable; using raster fallback", error);
+    console.warn(
+      "Global species map unavailable; using raster fallback",
+      error
+    );
     await renderRasterSpeciesMap(source, container, options);
   }
 }
 function renderIucnStatus(root) {
   const cats = ["EX", "EW", "CR", "EN", "VU", "NT", "LC"];
-  for (const el of Array.from(root.querySelectorAll("p,blockquote p"))) {
-    const text = (el.textContent || "").replace(/\s+/g, " ").trim();
-    if (!/IUCN\s*3\.1\s*:/i.test(text) || el.querySelector(".meta-quest-iucn")) continue;
+  for (const el of Array.from(
+    root.querySelectorAll("p,blockquote p")
+  )) {
+    const text2 = (el.textContent || "").replace(/\s+/g, " ").trim();
+    if (!/IUCN\s*3\.1\s*:/i.test(text2) || el.querySelector(".meta-quest-iucn"))
+      continue;
     const marked = el.querySelector("mark")?.textContent?.trim().toUpperCase();
     const active = marked && cats.includes(marked) ? marked : "LC";
-    const scale = document.createElement("div");
+    const scale = createDiv();
     scale.className = "meta-quest-iucn meta-quest-iucn-inline";
-    const title = document.createElement("div");
+    const title = createDiv();
     title.className = "meta-quest-iucn-title";
     title.textContent = active === "LC" ? tr("Pouco Preocupante", "Least Concern") : "IUCN " + active;
-    const row = document.createElement("div");
+    const row = createDiv();
     row.className = "meta-quest-iucn-row";
     for (const c of cats) {
-      const x = document.createElement("span");
+      const x = createSpan();
       x.className = `meta-quest-iucn-category${c === active ? " is-active" : ""}`;
       x.textContent = c;
       row.append(x);
     }
-    const labels = document.createElement("div");
+    const labels = createDiv();
     labels.className = "meta-quest-iucn-labels";
-    for (const label of [tr("Extinta", "Extinct"), tr("Amea\xE7ada", "Threatened"), tr("Pouco preocupante", "Least concern")]) {
-      const item = document.createElement("span");
+    for (const label of [
+      tr("Extinta", "Extinct"),
+      tr("Amea\xE7ada", "Threatened"),
+      tr("Pouco preocupante", "Least concern")
+    ]) {
+      const item = createSpan();
       item.textContent = label;
       labels.append(item);
     }
@@ -16062,12 +16495,15 @@ function parseFasta(source) {
     if (line.startsWith(">")) {
       if (current?.sequence) sequences.push(current);
       const parts = line.slice(1).trim().split(/\s+/), inline = [];
-      while (parts.length > 1 && /^[A-Z*.-]{12,}$/i.test(parts.at(-1) || "")) inline.unshift(parts.pop() || "");
+      while (parts.length > 1 && /^[A-Z*.-]{12,}$/i.test(parts.at(-1) || ""))
+        inline.unshift(parts.pop() || "");
       const title = parts.join(" ") || `Sequence ${sequences.length + 1}`;
       current = title ? { id: title.split(/\s+/)[0], sequence: inline.join("").toUpperCase() } : null;
     } else {
       current ??= { id: "Sequence_1", sequence: "" };
-      current.sequence += (line.toUpperCase().match(/[A-Z*.-]/g) || []).join("");
+      current.sequence += (line.toUpperCase().match(/[A-Z*.-]/g) || []).join(
+        ""
+      );
     }
     if (sequences.length >= 127) break;
   }
@@ -16079,31 +16515,47 @@ function pDistance(a, b, maxSites = 5e3) {
   const length = Math.min(a.length, b.length), step = Math.max(1, Math.ceil(length / maxSites));
   for (let i = 0; i < length; i += step) {
     const x = a[i], y = b[i];
-    if (!x || !y || x === "-" || y === "-" || x === "." || y === "." || x === "N" || y === "N" || x === "X" || y === "X") continue;
+    if (!x || !y || x === "-" || y === "-" || x === "." || y === "." || x === "N" || y === "N" || x === "X" || y === "X")
+      continue;
     compared++;
     if (x !== y) different++;
   }
   return compared ? different / compared : 1;
 }
 function buildUpgma(sequences) {
-  const selected = sequences.slice(0, 64), clusters2 = selected.map((item, index) => ({ node: { name: item.id, height: 0, size: 1 }, members: [index] })), base = selected.map((a, i) => selected.map((b, j) => i === j ? 0 : pDistance(a.sequence, b.sequence)));
+  const selected = sequences.slice(0, 64), clusters2 = selected.map((item, index) => ({
+    node: { name: item.id, height: 0, size: 1 },
+    members: [index]
+  })), base = selected.map(
+    (a, i) => selected.map((b, j) => i === j ? 0 : pDistance(a.sequence, b.sequence))
+  );
   while (clusters2.length > 1) {
     let ai = 0, bi = 1, best = Infinity;
-    for (let i = 0; i < clusters2.length; i++) for (let j = i + 1; j < clusters2.length; j++) {
-      let total = 0, count = 0;
-      for (const a of clusters2[i].members) for (const b of clusters2[j].members) {
-        total += base[a][b];
-        count++;
+    for (let i = 0; i < clusters2.length; i++)
+      for (let j = i + 1; j < clusters2.length; j++) {
+        let total = 0, count = 0;
+        for (const a of clusters2[i].members)
+          for (const b of clusters2[j].members) {
+            total += base[a][b];
+            count++;
+          }
+        const distance = count ? total / count : 1;
+        if (distance < best) {
+          best = distance;
+          ai = i;
+          bi = j;
+        }
       }
-      const distance = count ? total / count : 1;
-      if (distance < best) {
-        best = distance;
-        ai = i;
-        bi = j;
-      }
-    }
     const right = clusters2.splice(bi, 1)[0], left = clusters2.splice(ai, 1)[0];
-    clusters2.push({ node: { left: left.node, right: right.node, height: best / 2, size: left.node.size + right.node.size }, members: [...left.members, ...right.members] });
+    clusters2.push({
+      node: {
+        left: left.node,
+        right: right.node,
+        height: best / 2,
+        size: left.node.size + right.node.size
+      },
+      members: [...left.members, ...right.members]
+    });
   }
   return clusters2[0]?.node ?? null;
 }
@@ -16117,14 +16569,16 @@ function drawTree(root, sequences) {
     }
   };
   collect(root);
-  const canvas = document.createElement("canvas"), row = 26, margin = 24, labelWidth = 220;
+  const canvas = createEl("canvas"), row = 26, margin = 24, labelWidth = 220;
   canvas.width = 1100;
   canvas.height = Math.max(180, margin * 2 + leaves.length * row);
   const ctx = canvas.getContext("2d");
   ctx.fillStyle = "#07111d";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   const maxHeight = Math.max(root.height, 1e-4), xFor = (height) => margin + (maxHeight - height) / maxHeight * (canvas.width - labelWidth - margin * 2), positions = /* @__PURE__ */ new Map();
-  leaves.forEach((leaf, index) => positions.set(leaf, { x: xFor(0), y: margin + index * row + row / 2 }));
+  leaves.forEach(
+    (leaf, index) => positions.set(leaf, { x: xFor(0), y: margin + index * row + row / 2 })
+  );
   const layout = (node) => {
     const known = positions.get(node);
     if (known) return known;
@@ -16159,7 +16613,11 @@ function drawTree(root, sequences) {
   }
   ctx.fillStyle = "#9fb2c9";
   ctx.font = "13px system-ui";
-  ctx.fillText(`UPGMA \xB7 p-distance \xB7 ${Math.min(64, sequences.length)} taxa \xB7 up to 5,000 informative sites`, margin, canvas.height - 10);
+  ctx.fillText(
+    `UPGMA \xB7 p-distance \xB7 ${Math.min(64, sequences.length)} taxa \xB7 up to 5,000 informative sites`,
+    margin,
+    canvas.height - 10
+  );
   return canvas;
 }
 function renderAlignment(sequences, length, container) {
@@ -16167,9 +16625,17 @@ function renderAlignment(sequences, length, container) {
   for (const item of sequences) {
     grid.createDiv({ cls: "meta-quest-fasta-id", text: item.id });
     const row = grid.createDiv({ cls: "meta-quest-fasta-sequence" });
-    for (const residue of item.sequence.slice(0, 1e4)) row.createSpan({ cls: `meta-quest-fasta-${residueGroup(residue)}`, text: residue });
+    for (const residue of item.sequence.slice(0, 1e4))
+      row.createSpan({
+        cls: `meta-quest-fasta-${residueGroup(residue)}`,
+        text: residue
+      });
   }
-  if (length > 1e4) container.createDiv({ cls: "meta-quest-fasta-warning", text: "Preview limited to 10,000 residues per sequence." });
+  if (length > 1e4)
+    container.createDiv({
+      cls: "meta-quest-fasta-warning",
+      text: "Preview limited to 10,000 residues per sequence."
+    });
 }
 function renderDistanceMatrix(sequences, container) {
   const selected = sequences.slice(0, 24), table = container.createEl("table", { cls: "meta-quest-fasta-matrix" }), head = table.createEl("thead").createEl("tr");
@@ -16179,7 +16645,11 @@ function renderDistanceMatrix(sequences, container) {
   selected.forEach((a, i) => {
     const row = body.createEl("tr");
     row.createEl("th", { text: `${i + 1}. ${a.id}` });
-    selected.forEach((b, j) => row.createEl("td", { text: i === j ? "\u2014" : pDistance(a.sequence, b.sequence).toFixed(3) }));
+    selected.forEach(
+      (b, j) => row.createEl("td", {
+        text: i === j ? "\u2014" : pDistance(a.sequence, b.sequence).toFixed(3)
+      })
+    );
   });
 }
 function renderFasta(source, container) {
@@ -16187,11 +16657,20 @@ function renderFasta(source, container) {
   container.empty();
   container.addClass("meta-quest-fasta");
   if (!sequences.length) {
-    container.createDiv({ cls: "meta-quest-fasta-error", text: "No valid FASTA sequences found." });
+    container.createDiv({
+      cls: "meta-quest-fasta-error",
+      text: "No valid FASTA sequences found."
+    });
     return;
   }
-  const length = Math.max(...sequences.map((item) => item.sequence.length)), normalized = sequences.map((item) => ({ ...item, sequence: item.sequence.padEnd(length, "-") }));
-  container.createDiv({ cls: "meta-quest-fasta-title", text: `FASTA \xB7 ${normalized.length} sequences \xB7 ${length} residues` });
+  const length = Math.max(...sequences.map((item) => item.sequence.length)), normalized = sequences.map((item) => ({
+    ...item,
+    sequence: item.sequence.padEnd(length, "-")
+  }));
+  container.createDiv({
+    cls: "meta-quest-fasta-title",
+    text: `FASTA \xB7 ${normalized.length} sequences \xB7 ${length} residues`
+  });
   const toolbar = container.createDiv({ cls: "meta-quest-fasta-toolbar" }), alignmentButton = toolbar.createEl("button", { text: "Alignment" }), treeButton = toolbar.createEl("button", { text: "UPGMA tree" }), matrixButton = toolbar.createEl("button", { text: "Distances" }), viewport = container.createDiv({ cls: "meta-quest-fasta-viewport" });
   const showAlignment = () => {
     viewport.empty();
@@ -16201,11 +16680,17 @@ function renderFasta(source, container) {
   treeButton.onclick = () => {
     viewport.empty();
     if (normalized.length < 2) {
-      viewport.createDiv({ cls: "meta-quest-fasta-error", text: "At least two sequences are required to infer a tree." });
+      viewport.createDiv({
+        cls: "meta-quest-fasta-error",
+        text: "At least two sequences are required to infer a tree."
+      });
       return;
     }
-    viewport.createDiv({ cls: "meta-quest-fasta-status", text: "Inferring UPGMA tree\u2026" });
-    requestAnimationFrame(() => {
+    viewport.createDiv({
+      cls: "meta-quest-fasta-status",
+      text: "Inferring UPGMA tree\u2026"
+    });
+    window.requestAnimationFrame(() => {
       const tree = buildUpgma(normalized);
       viewport.empty();
       if (tree) viewport.append(drawTree(tree, normalized));
@@ -16219,8 +16704,8 @@ function renderFasta(source, container) {
 }
 
 // src/audio-spectral.ts
-var import_obsidian5 = require("obsidian");
-var AudioSpectralRenderChild = class extends import_obsidian5.MarkdownRenderChild {
+var import_obsidian7 = require("obsidian");
+var AudioSpectralRenderChild = class extends import_obsidian7.MarkdownRenderChild {
   constructor(container, options) {
     super(container);
     this.options = options;
@@ -16246,18 +16731,23 @@ var AudioSpectralRenderChild = class extends import_obsidian5.MarkdownRenderChil
     this.scanFrame = 0;
   }
   attachPlayers() {
-    const scope = this.containerEl.closest(".markdown-rendered, .markdown-preview-view") ?? this.containerEl;
-    for (const audio of Array.from(scope.querySelectorAll("audio,video"))) {
+    const scope = this.containerEl.closest(
+      ".markdown-rendered, .markdown-preview-view"
+    ) ?? this.containerEl;
+    for (const audio of Array.from(
+      scope.querySelectorAll("audio,video")
+    )) {
       if (audio.closest(".markdown-source-view")) continue;
       if (audio.dataset.metaQuestSpectralAttached === "true") continue;
-      if (audio.parentElement === document.body && document.querySelector(".block-language-audio-player")) continue;
+      if (audio.parentElement === document.body && document.querySelector(".block-language-audio-player"))
+        continue;
       if (audio.closest(".meta-quest-species-sound")) continue;
       const source = this.options.resolveSource(audio);
       if (!source) continue;
       audio.dataset.metaQuestSpectralAttached = "true";
-      const controls = document.createElement("div");
+      const controls = createDiv();
       controls.className = "meta-quest-audio-spectral-controls";
-      const button = document.createElement("button");
+      const button = createEl("button");
       button.type = "button";
       button.className = "meta-quest-audio-spectral-button";
       button.textContent = "Rastro 3D";
@@ -16272,16 +16762,27 @@ var AudioSpectralRenderChild = class extends import_obsidian5.MarkdownRenderChil
           button.textContent = "Rastro 3D";
           return;
         }
-        for (const other of Array.from(document.querySelectorAll("audio,video"))) {
+        for (const other of Array.from(
+          document.querySelectorAll("audio,video")
+        )) {
           if (other !== audio && !other.paused) other.pause();
         }
         if (audio.paused) void audio.play().catch(() => void 0);
-        trail = mountDesktopSpectralTrail(audio, controls, () => this.options.analyzeAudio(source), { storageKey: source });
+        trail = mountDesktopSpectralTrail(
+          audio,
+          controls,
+          () => this.options.analyzeAudio(source),
+          { storageKey: source }
+        );
         button.textContent = "Fechar rastro 3D";
       });
     }
-    const audioPlayerBlocks = Array.from(document.querySelectorAll(".block-language-audio-player")).filter((block) => !block.closest(".markdown-source-view"));
-    const detachedPlayers = Array.from(document.querySelectorAll("body > audio, body audio"));
+    const audioPlayerBlocks = Array.from(
+      document.querySelectorAll(".block-language-audio-player")
+    ).filter((block) => !block.closest(".markdown-source-view"));
+    const detachedPlayers = Array.from(
+      document.querySelectorAll("body > audio, body audio")
+    );
     audioPlayerBlocks.forEach((block, index) => {
       if (block.dataset.metaQuestSpectralAttached === "true") return;
       const player = detachedPlayers[index] ?? detachedPlayers[0];
@@ -16290,7 +16791,7 @@ var AudioSpectralRenderChild = class extends import_obsidian5.MarkdownRenderChil
       if (!source) return;
       block.dataset.metaQuestSpectralAttached = "true";
       player.dataset.metaQuestSpectralAttached = "true";
-      const controls = document.createElement("div"), button = document.createElement("button");
+      const controls = createDiv(), button = createEl("button");
       controls.className = "meta-quest-audio-spectral-controls";
       button.type = "button";
       button.className = "meta-quest-audio-spectral-button";
@@ -16305,25 +16806,44 @@ var AudioSpectralRenderChild = class extends import_obsidian5.MarkdownRenderChil
           button.textContent = "Rastro 3D";
           return;
         }
-        for (const other of Array.from(document.querySelectorAll("audio,video"))) if (other !== player && !other.paused) other.pause();
+        for (const other of Array.from(
+          document.querySelectorAll("audio,video")
+        ))
+          if (other !== player && !other.paused) other.pause();
         if (player.paused) void player.play().catch(() => void 0);
-        trail = mountDesktopSpectralTrail(player, controls, () => this.options.analyzeAudio(source), { storageKey: source });
+        trail = mountDesktopSpectralTrail(
+          player,
+          controls,
+          () => this.options.analyzeAudio(source),
+          { storageKey: source }
+        );
         button.textContent = "Fechar rastro 3D";
       };
     });
-    const frames = Array.from(scope.querySelectorAll("iframe")).filter((frame) => !frame.closest(".markdown-source-view") && /(?:releases\.obsidian\.md\/youtube|youtube\.com|youtu\.be)/iu.test(frame.src));
+    const frames = Array.from(
+      scope.querySelectorAll("iframe")
+    ).filter(
+      (frame) => !frame.closest(".markdown-source-view") && /(?:releases\.obsidian\.md\/youtube|youtube\.com|youtu\.be)/iu.test(
+        frame.src
+      )
+    );
     const visible = frames.find((frame) => frame.getClientRects().length > 0) ?? frames.at(-1);
     for (const frame of frames) {
       if (frame === visible) continue;
       const sibling = frame.nextElementSibling;
-      if (sibling?.classList.contains("meta-quest-audio-spectral-controls")) sibling.remove();
+      if (sibling?.classList.contains("meta-quest-audio-spectral-controls"))
+        sibling.remove();
       delete frame.dataset.metaQuestSpectralAttached;
     }
     if (visible) {
-      const match = visible.src.match(/(?:releases\.obsidian\.md\/youtube\?v=|youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([\w-]+)/iu), id = decodeURIComponent(match?.[1] ?? ""), source = "https://www.youtube.com/watch?v=" + encodeURIComponent(id);
-      if (id && !(visible.dataset.metaQuestSpectralAttached === "true" && visible.nextElementSibling?.classList.contains("meta-quest-audio-spectral-controls"))) {
+      const match = visible.src.match(
+        /(?:releases\.obsidian\.md\/youtube\?v=|youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([\w-]+)/iu
+      ), id = decodeURIComponent(match?.[1] ?? ""), source = "https://www.youtube.com/watch?v=" + encodeURIComponent(id);
+      if (id && !(visible.dataset.metaQuestSpectralAttached === "true" && visible.nextElementSibling?.classList.contains(
+        "meta-quest-audio-spectral-controls"
+      ))) {
         visible.dataset.metaQuestSpectralAttached = "true";
-        const controls = document.createElement("div"), button = document.createElement("button");
+        const controls = createDiv(), button = createEl("button");
         controls.className = "meta-quest-audio-spectral-controls";
         button.type = "button";
         button.className = "meta-quest-audio-spectral-button";
@@ -16340,24 +16860,44 @@ var AudioSpectralRenderChild = class extends import_obsidian5.MarkdownRenderChil
             button.textContent = "Rastro 3D";
             return;
           }
-          const state = { reportedTime: 0, reportedAt: performance.now(), duration: 0, paused: true, ended: false, get currentTime() {
-            return Math.min(this.duration || Infinity, this.reportedTime + (this.paused ? 0 : Math.min(2, Math.max(0, (performance.now() - this.reportedAt) / 1e3))));
-          }, addEventListener: () => void 0 };
+          const state = {
+            reportedTime: 0,
+            reportedAt: performance.now(),
+            duration: 0,
+            paused: true,
+            ended: false,
+            get currentTime() {
+              return Math.min(
+                this.duration || Infinity,
+                this.reportedTime + (this.paused ? 0 : Math.min(
+                  2,
+                  Math.max(
+                    0,
+                    (performance.now() - this.reportedAt) / 1e3
+                  )
+                ))
+              );
+            },
+            addEventListener: () => void 0
+          };
           const receive = (event) => {
             if (event.source !== visible.contentWindow) return;
+            if (event.origin !== "https://www.youtube.com") return;
             let message = event.data;
-            if (typeof message === "string") try {
-              message = JSON.parse(message);
-            } catch {
-              return;
-            }
-            const info = message?.info;
-            if (message?.event === "infoDelivery" && info) {
+            if (typeof message === "string")
+              try {
+                message = JSON.parse(message);
+              } catch {
+                return;
+              }
+            const parsed = objectValue(message), info = objectValue(parsed.info);
+            if (parsed.event === "infoDelivery") {
               if (Number.isFinite(info.currentTime)) {
                 state.reportedTime = Number(info.currentTime);
                 state.reportedAt = performance.now();
               }
-              if (Number.isFinite(info.duration)) state.duration = Number(info.duration);
+              if (Number.isFinite(info.duration))
+                state.duration = Number(info.duration);
               if (Number.isFinite(info.playerState)) {
                 const interpolated = state.currentTime;
                 state.reportedTime = interpolated;
@@ -16370,15 +16910,26 @@ var AudioSpectralRenderChild = class extends import_obsidian5.MarkdownRenderChil
           window.addEventListener("message", receive);
           dispose = () => window.removeEventListener("message", receive);
           const play = () => {
-            visible.contentWindow?.postMessage(JSON.stringify({ event: "listening", id: "meta-quest-spectral" }), "*");
-            visible.contentWindow?.postMessage(JSON.stringify({ event: "command", func: "playVideo", args: [] }), "*");
+            visible.contentWindow?.postMessage(
+              JSON.stringify({ event: "listening", id: "meta-quest-spectral" }),
+              "https://www.youtube.com"
+            );
+            visible.contentWindow?.postMessage(
+              JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+              "https://www.youtube.com"
+            );
           };
           visible.allow = [visible.allow, "autoplay"].filter(Boolean).join("; ");
           visible.addEventListener("load", play, { once: true });
           visible.src = "https://www.youtube.com/embed/" + encodeURIComponent(id) + "?enablejsapi=1&autoplay=1&playsinline=1&rel=0";
           window.setTimeout(play, 700);
           analysis ??= this.options.analyzeAudio(source);
-          trail = mountDesktopSpectralTrail(state, controls, () => analysis, { storageKey: source, syncOffsetMs: 120 });
+          trail = mountDesktopSpectralTrail(
+            state,
+            controls,
+            () => analysis,
+            { storageKey: source, syncOffsetMs: 120 }
+          );
           button.textContent = "Fechar rastro 3D";
         };
       }
@@ -16402,7 +16953,7 @@ var DEFAULT_SETTINGS = {
 function listSetting(value) {
   return value.split(/[\n,]/u).map((item) => item.trim().replace(/^\/+|\/+$/gu, "")).filter(Boolean);
 }
-var PairingModal = class extends import_obsidian6.Modal {
+var PairingModal = class extends import_obsidian8.Modal {
   constructor(app, pairingUrl, session) {
     super(app);
     this.pairingUrl = pairingUrl;
@@ -16430,20 +16981,20 @@ var PairingModal = class extends import_obsidian6.Modal {
       cls: "obsidian-ar-status",
       text: tr(`Ponte ativa em ${this.session.url}`, `Bridge active at ${this.session.url}`)
     });
-    const text = this.contentEl.createEl("textarea", {
+    const text2 = this.contentEl.createEl("textarea", {
       cls: "obsidian-ar-pairing-url"
     });
-    text.value = this.pairingUrl;
-    text.readOnly = true;
+    text2.value = this.pairingUrl;
+    text2.readOnly = true;
     const actions = this.contentEl.createDiv({ cls: "obsidian-ar-actions" });
     const copy = actions.createEl("button", { text: tr("Copiar link", "Copy link") });
     copy.addEventListener("click", () => {
       void navigator.clipboard.writeText(this.pairingUrl).then(
-        () => new import_obsidian6.Notice(tr("Link de pareamento copiado.", "Pairing link copied.")),
+        () => new import_obsidian8.Notice(tr("Link de pareamento copiado.", "Pairing link copied.")),
         () => {
-          text.focus();
-          text.select();
-          new import_obsidian6.Notice(tr("Selecione e copie o link exibido.", "Select and copy the displayed link."));
+          text2.focus();
+          text2.select();
+          new import_obsidian8.Notice(tr("Selecione e copie o link exibido.", "Select and copy the displayed link."));
         }
       );
     });
@@ -16454,16 +17005,17 @@ var PairingModal = class extends import_obsidian6.Modal {
     this.contentEl.empty();
   }
 };
-var ObsidianArPlugin = class extends import_obsidian6.Plugin {
+var ObsidianArPlugin = class extends import_obsidian8.Plugin {
   settings = DEFAULT_SETTINGS;
   sessionManager = new SessionManager();
   activeSession = null;
   startPromise = null;
   sessionStatus = tr("Nenhuma sess\xE3o conectada.", "No session connected.");
-  exportGraphDebounced = (0, import_obsidian6.debounce)(() => {
+  exportGraphDebounced = (0, import_obsidian8.debounce)(() => {
     if (this.settings.autoExport) void this.exportGraph(false);
   }, 1500, true);
   async onload() {
+    setPluginApp(this.app);
     await this.loadSettings();
     setLanguagePreference(this.settings.interfaceLanguage);
     this.sessionStatus = tr("Nenhuma sess\xE3o conectada.", "No session connected.");
@@ -16514,10 +17066,11 @@ var ObsidianArPlugin = class extends import_obsidian6.Plugin {
   }
   onunload() {
     this.exportGraphDebounced.cancel();
+    setPluginApp(null);
   }
   vaultPath() {
     const adapter = this.app.vault.adapter;
-    if (!(adapter instanceof import_obsidian6.FileSystemAdapter)) {
+    if (!(adapter instanceof import_obsidian8.FileSystemAdapter)) {
       throw new Error(tr("Meta Quest Sync requer um vault local no aplicativo desktop.", "Meta Quest Sync requires a local vault in the desktop app."));
     }
     return adapter.getBasePath();
@@ -16525,7 +17078,7 @@ var ObsidianArPlugin = class extends import_obsidian6.Plugin {
   async exportGraph(showNotice) {
     const root = this.settings.projectRoot.trim();
     if (!root) {
-      if (showNotice) new import_obsidian6.Notice(tr("Configure a pasta do projeto Meta Quest Sync.", "Configure the Meta Quest Sync project folder."));
+      if (showNotice) new import_obsidian8.Notice(tr("Configure a pasta do projeto Meta Quest Sync.", "Configure the Meta Quest Sync project folder."));
       return;
     }
     const graph = exportVaultGraph(
@@ -16533,9 +17086,9 @@ var ObsidianArPlugin = class extends import_obsidian6.Plugin {
       listSetting(this.settings.excludedFolders),
       listSetting(this.settings.excludedTags)
     );
-    await import_node_fs2.promises.writeFile(import_node_path2.default.join(root, "graph.json"), `${JSON.stringify(graph)}
+    await import_node_fs2.promises.writeFile(import_node_path3.default.join(root, "graph.json"), `${JSON.stringify(graph)}
 `, "utf8");
-    if (showNotice) new import_obsidian6.Notice(tr(`Grafo atualizado: ${graph.nodes.length} notas.`, `Graph updated: ${graph.nodes.length} notes.`));
+    if (showNotice) new import_obsidian8.Notice(tr(`Grafo atualizado: ${graph.nodes.length} notas.`, `Graph updated: ${graph.nodes.length} notes.`));
   }
   setSessionStatus(message, report) {
     this.sessionStatus = message;
@@ -16553,27 +17106,27 @@ var ObsidianArPlugin = class extends import_obsidian6.Plugin {
     }
     const root = this.settings.projectRoot.trim();
     if (!root) {
-      new import_obsidian6.Notice(tr("Abra Configura\xE7\xF5es \u2192 Meta Quest Sync e informe a pasta do projeto.", "Open Settings \u2192 Meta Quest Sync and select the project folder."));
+      new import_obsidian8.Notice(tr("Abra Configura\xE7\xF5es \u2192 Meta Quest Sync e informe a pasta do projeto.", "Open Settings \u2192 Meta Quest Sync and select the project folder."));
       this.setSessionStatus(tr("Informe a pasta do projeto antes de conectar.", "Select the project folder before connecting."), report);
       return false;
     }
     this.startPromise = (async () => {
       try {
         this.setSessionStatus(tr("Exportando o grafo do vault\u2026", "Exporting the vault graph\u2026"), report);
-        new import_obsidian6.Notice(tr("Meta Quest Sync: preparando o grafo e procurando a ponte local\u2026", "Meta Quest Sync: preparing the graph and looking for the local bridge\u2026"), 8e3);
+        new import_obsidian8.Notice(tr("Meta Quest Sync: preparando o grafo e procurando a ponte local\u2026", "Meta Quest Sync: preparing the graph and looking for the local bridge\u2026"), 8e3);
         await this.exportGraph(false);
         this.setSessionStatus(tr("Salvando a configura\xE7\xE3o da ponte\u2026", "Saving the bridge configuration\u2026"), report);
         await this.sessionManager.configure(this.settings, this.vaultPath());
         this.activeSession = await this.sessionManager.connect(this.settings);
         if (showPairing) this.showPairing();
         this.setSessionStatus(showPairing ? tr("Sess\xE3o pronta para parear com o Quest.", "Session ready to pair with the Quest.") : tr("Ponte de an\xE1lise conectada.", "Analysis bridge connected."), report);
-        if (showPairing) new import_obsidian6.Notice(tr("Meta Quest Sync pronto para parear com o Quest.", "Meta Quest Sync is ready to pair with the Quest."));
+        if (showPairing) new import_obsidian8.Notice(tr("Meta Quest Sync pronto para parear com o Quest.", "Meta Quest Sync is ready to pair with the Quest."));
         return true;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error(tr("Meta Quest Sync n\xE3o conectou.", "Meta Quest Sync failed to connect."), error);
         this.setSessionStatus(tr(`Falha: ${message}`, `Failure: ${message}`), report);
-        new import_obsidian6.Notice(`Meta Quest Sync: ${message}`, 12e3);
+        new import_obsidian8.Notice(`Meta Quest Sync: ${message}`, 12e3);
         return false;
       } finally {
         this.startPromise = null;
@@ -16601,9 +17154,7 @@ var ObsidianArPlugin = class extends import_obsidian6.Plugin {
   async analyzeAudio(notePath, source) {
     if (!this.activeSession) this.activeSession = await this.sessionManager.attach(this.settings);
     if (!this.activeSession) {
-      const accepted = window.confirm(tr("Nenhuma ponte de an\xE1lise est\xE1 ativa. Deseja inici\xE1-la agora em segundo plano?", "No analysis bridge is active. Start it now in the background?"));
-      if (!accepted) throw new Error(tr("A an\xE1lise foi cancelada porque a ponte n\xE3o est\xE1 ativa.", "Analysis was cancelled because the bridge is not active."));
-      if (!await this.startAr(void 0, false)) throw new Error(tr("N\xE3o foi poss\xEDvel iniciar a ponte de an\xE1lise.", "Could not start the analysis bridge."));
+      throw new Error(tr("A ponte n\xE3o est\xE1 ativa na porta 8765. Inicie-a pelo projeto auxiliar e tente novamente.", "The bridge is not running on port 8765. Start it from the companion project and try again."));
     }
     const session = this.activeSession;
     if (!session) throw new Error(tr("A sess\xE3o de an\xE1lise n\xE3o est\xE1 ativa.", "The analysis session is not active."));
@@ -16611,7 +17162,7 @@ var ObsidianArPlugin = class extends import_obsidian6.Plugin {
     const remoteVideo = remote && (/(?:youtube\.com|youtu\.be|vimeo\.com|dailymotion\.com)/iu.test(source) || /\.(?:mp4|webm|mov|m4v)(?:[?#]|$)/iu.test(source));
     const endpoint = remote ? remoteVideo ? "remote-spectral-analysis" : "remote-audio-ticket" : "spectral-analysis";
     const body = remote ? { notePath, url: source } : { notePath, assetPath: source };
-    const response = await (0, import_obsidian6.requestUrl)({
+    const response = await (0, import_obsidian8.requestUrl)({
       url: `${session.localUrl.replace(/\/+$/u, "")}/${endpoint}`,
       method: "POST",
       headers: { Authorization: `Bearer ${session.token}`, "Content-Type": "application/json" },
@@ -16631,7 +17182,7 @@ var ObsidianArPlugin = class extends import_obsidian6.Plugin {
   async stopAr() {
     this.activeSession = null;
     this.sessionStatus = tr("Sess\xE3o desconectada.", "Session disconnected.");
-    new import_obsidian6.Notice(tr("Meta Quest Sync desconectado. A ponte externa continua sob controle do usu\xE1rio.", "Meta Quest Sync disconnected. The external bridge remains under user control."));
+    new import_obsidian8.Notice(tr("Meta Quest Sync desconectado. A ponte externa continua sob controle do usu\xE1rio.", "Meta Quest Sync disconnected. The external bridge remains under user control."));
   }
   showPairing() {
     if (!this.activeSession) return;
@@ -16647,81 +17198,106 @@ var ObsidianArPlugin = class extends import_obsidian6.Plugin {
       settings?.close();
       window.setTimeout(() => modal.open(), 120);
     } catch (error) {
-      new import_obsidian6.Notice(tr(`Pareamento inv\xE1lido: ${String(error)}`, `Invalid pairing: ${String(error)}`));
+      new import_obsidian8.Notice(tr(`Pareamento inv\xE1lido: ${String(error)}`, `Invalid pairing: ${String(error)}`));
     }
   }
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const stored = objectValue(await this.loadData());
+    this.settings = { ...DEFAULT_SETTINGS };
+    for (const key of ["projectRoot", "viewerUrl", "tunnelUrl", "tunnelTokenFile", "excludedFolders", "excludedTags"]) {
+      if (typeof stored[key] === "string") this.settings[key] = stored[key];
+    }
+    if (stored.interfaceLanguage === "en") this.settings.interfaceLanguage = "en";
+    if (stored.tunnelMode === "named") this.settings.tunnelMode = "named";
+    if (typeof stored.autoExport === "boolean") this.settings.autoExport = stored.autoExport;
   }
   async saveSettings() {
     await this.saveData(this.settings);
   }
 };
-var ObsidianArSettingTab = class extends import_obsidian6.PluginSettingTab {
+var ObsidianArSettingTab = class extends import_obsidian8.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
   }
-  display() {
-    const { containerEl } = this;
-    containerEl.empty();
-    new import_obsidian6.Setting(containerEl).setName(tr("Idioma da interface", "Interface language")).setDesc(tr("Use o idioma do Obsidian/sistema ou force o ingl\xEAs.", "Use the Obsidian/system language or force English.")).addDropdown((dropdown) => dropdown.addOption("system", tr("Idioma do sistema", "System language")).addOption("en", "English").setValue(this.plugin.settings.interfaceLanguage).onChange(async (value) => {
-      this.plugin.settings.interfaceLanguage = value;
-      setLanguagePreference(value);
-      await this.plugin.saveSettings();
-      this.display();
-    }));
-    new import_obsidian6.Setting(containerEl).setName(tr("Pasta do projeto", "Project folder")).setDesc(tr("Pasta absoluta do clone Obsidian-Ar que cont\xE9m Scripts e note-bridge-rs.", "Absolute path to the Obsidian-Ar clone containing Scripts and note-bridge-rs.")).addText((text) => text.setPlaceholder("C:\\Projetos\\Obsidian-Ar").setValue(this.plugin.settings.projectRoot).onChange(async (value) => {
-      this.plugin.settings.projectRoot = value.trim();
-      await this.plugin.saveSettings();
-    }));
-    new import_obsidian6.Setting(containerEl).setName(tr("Visualizador HTTPS", "HTTPS viewer")).setDesc(tr("Site WebXR que ser\xE1 aberto pelo QR Code.", "WebXR site opened by the QR code.")).addText((text) => text.setValue(this.plugin.settings.viewerUrl).onChange(async (value) => {
-      this.plugin.settings.viewerUrl = value.trim();
-      await this.plugin.saveSettings();
-    }));
-    new import_obsidian6.Setting(containerEl).setName(tr("Porta local", "Local port")).setDesc(tr("Porta usada pela ponte Axum.", "Port used by the Axum bridge.")).addText((text) => text.setValue(String(this.plugin.settings.port)).onChange(async (value) => {
-      const port = Number.parseInt(value, 10);
-      if (port >= 1024 && port <= 65535) this.plugin.settings.port = port;
-      await this.plugin.saveSettings();
-    }));
-    new import_obsidian6.Setting(containerEl).setName(tr("Tipo de t\xFAnel", "Tunnel type")).setDesc(tr("Quick Tunnel \xE9 tempor\xE1rio; Named Tunnel \xE9 indicado para uso recorrente.", "Quick Tunnel is temporary; Named Tunnel is recommended for recurring use.")).addDropdown((dropdown) => dropdown.addOption("quick", "Cloudflare Quick Tunnel").addOption("named", "Cloudflare Named Tunnel").setValue(this.plugin.settings.tunnelMode).onChange(async (value) => {
-      this.plugin.settings.tunnelMode = value;
-      await this.plugin.saveSettings();
-      this.display();
-    }));
-    if (this.plugin.settings.tunnelMode === "named") {
-      new import_obsidian6.Setting(containerEl).setName(tr("URL do Named Tunnel", "Named Tunnel URL")).addText((text) => text.setValue(this.plugin.settings.tunnelUrl).onChange(async (value) => {
-        this.plugin.settings.tunnelUrl = value.trim();
-        await this.plugin.saveSettings();
-      }));
-      new import_obsidian6.Setting(containerEl).setName(tr("Arquivo do token do t\xFAnel", "Tunnel token file")).addText((text) => text.setValue(this.plugin.settings.tunnelTokenFile).onChange(async (value) => {
-        this.plugin.settings.tunnelTokenFile = value.trim();
-        await this.plugin.saveSettings();
-      }));
-    }
-    new import_obsidian6.Setting(containerEl).setName(tr("Pastas exclu\xEDdas", "Excluded folders")).setDesc(tr("Uma pasta por linha ou separada por v\xEDrgulas.", "One folder per line or separated by commas.")).addTextArea((text) => text.setValue(this.plugin.settings.excludedFolders).onChange(async (value) => {
-      this.plugin.settings.excludedFolders = value;
-      await this.plugin.saveSettings();
-    }));
-    new import_obsidian6.Setting(containerEl).setName(tr("Tags exclu\xEDdas", "Excluded tags")).setDesc(tr("Inclua #. Uma tag por linha ou separada por v\xEDrgulas.", "Include #. Enter one tag per line or separate them with commas.")).addTextArea((text) => text.setValue(this.plugin.settings.excludedTags).onChange(async (value) => {
-      this.plugin.settings.excludedTags = value;
-      await this.plugin.saveSettings();
-    }));
-    new import_obsidian6.Setting(containerEl).setName(tr("Atualizar grafo automaticamente", "Update graph automatically")).setDesc(tr("Reexporta o snapshot ap\xF3s altera\xE7\xF5es no vault, com debounce.", "Re-exports the snapshot after vault changes, with debounce.")).addToggle((toggle) => toggle.setValue(this.plugin.settings.autoExport).onChange(async (value) => {
-      this.plugin.settings.autoExport = value;
-      await this.plugin.saveSettings();
-    }));
-    const sessionSetting = new import_obsidian6.Setting(containerEl).setName(tr("Sess\xE3o AR", "AR session")).setDesc(this.plugin.sessionStatus);
-    sessionSetting.addButton((button) => button.setCta().setButtonText(tr("Conectar", "Connect")).onClick(async () => {
-      button.setDisabled(true).setButtonText(tr("Conectando\u2026", "Connecting\u2026"));
-      try {
-        await this.plugin.startAr((message) => sessionSetting.setDesc(message));
-      } finally {
-        button.setDisabled(false).setButtonText(tr("Conectar", "Connect"));
+  getSettingDefinitions() {
+    const fields2 = [];
+    const text2 = (key, name, desc, multiline = false) => {
+      fields2.push({ name, desc, render: (setting) => {
+        const configure = (control) => {
+          control.setValue(this.plugin.settings[key]).onChange(async (value) => {
+            this.plugin.settings[key] = value.trim();
+            await this.plugin.saveSettings();
+          });
+        };
+        if (multiline) setting.addTextArea(configure);
+        else setting.addText(configure);
+      } });
+    };
+    fields2.push({
+      name: tr("Idioma da interface", "Interface language"),
+      desc: tr("Use o idioma do Obsidian ou selecione ingl\xEAs.", "Use the Obsidian language or select English."),
+      render: (setting) => {
+        setting.addDropdown((control) => control.addOption("system", tr("Idioma do sistema", "System language")).addOption("en", "English").setValue(this.plugin.settings.interfaceLanguage).onChange(async (value) => {
+          this.plugin.settings.interfaceLanguage = value === "en" ? "en" : "system";
+          setLanguagePreference(this.plugin.settings.interfaceLanguage);
+          await this.plugin.saveSettings();
+          this.refreshSettings();
+        }));
       }
-    })).addButton((button) => button.setWarning().setButtonText(tr("Desconectar", "Disconnect")).onClick(() => {
-      void this.plugin.stopAr();
-    }));
+    });
+    text2("projectRoot", tr("Pasta do projeto", "Project folder"), tr("Pasta absoluta do clone Obsidian-Ar.", "Absolute path to the Obsidian-Ar clone."));
+    text2("viewerUrl", tr("Visualizador HTTPS", "HTTPS viewer"), tr("Site WebXR aberto pelo QR code.", "WebXR site opened by the QR code."));
+    fields2.push({ name: tr("Porta local", "Local port"), desc: "8765", render: (setting) => {
+      setting.addText((control) => control.setValue("8765").setDisabled(true));
+    } });
+    fields2.push({ name: tr("Tipo de t\xFAnel", "Tunnel type"), render: (setting) => {
+      setting.addDropdown((control) => control.addOption("quick", "Cloudflare quick tunnel").addOption("named", "Cloudflare named tunnel").setValue(this.plugin.settings.tunnelMode).onChange(async (value) => {
+        this.plugin.settings.tunnelMode = value === "named" ? "named" : "quick";
+        await this.plugin.saveSettings();
+        this.refreshSettings();
+      }));
+    } });
+    text2("tunnelUrl", tr("URL do t\xFAnel nomeado", "Named tunnel URL"), tr("Usado no modo named.", "Used in named mode."));
+    text2("tunnelTokenFile", tr("Arquivo do token do t\xFAnel", "Tunnel token file"), tr("Arquivo do projeto auxiliar.", "File in the companion project."));
+    text2("excludedFolders", tr("Pastas exclu\xEDdas", "Excluded folders"), tr("Uma pasta por linha ou separada por v\xEDrgulas.", "One folder per line or separated by commas."), true);
+    text2("excludedTags", tr("Tags exclu\xEDdas", "Excluded tags"), tr("Inclua #; separe por linhas ou v\xEDrgulas.", "Include #; separate with lines or commas."), true);
+    fields2.push({ name: tr("Atualizar grafo automaticamente", "Update graph automatically"), render: (setting) => {
+      setting.addToggle((control) => control.setValue(this.plugin.settings.autoExport).onChange(async (value) => {
+        this.plugin.settings.autoExport = value;
+        await this.plugin.saveSettings();
+      }));
+    } });
+    fields2.push({ name: tr("Sess\xE3o AR", "AR session"), desc: this.plugin.sessionStatus, render: (setting) => {
+      setting.addButton((button) => button.setCta().setButtonText(tr("Conectar", "Connect")).onClick(() => {
+        button.setDisabled(true);
+        void this.plugin.startAr((message) => {
+          setting.setDesc(message);
+        }).finally(() => {
+          button.setDisabled(false);
+        });
+      })).addButton((button) => button.setButtonText(tr("Desconectar", "Disconnect")).onClick(() => {
+        void this.plugin.stopAr();
+        setting.setDesc(this.plugin.sessionStatus);
+      }));
+    } });
+    return fields2;
+  }
+  refreshSettings() {
+    if ((0, import_obsidian8.requireApiVersion)("1.13.0")) this.update();
+    else this.renderSettings();
+  }
+  renderSettings() {
+    this.containerEl.empty();
+    for (const definition of this.getSettingDefinitions()) {
+      const setting = new import_obsidian8.Setting(this.containerEl).setName(definition.name);
+      if (definition.desc) setting.setDesc(definition.desc);
+      definition.render(setting);
+    }
+  }
+  // Fallback for Obsidian releases before declarative settings were introduced.
+  display() {
+    this.renderSettings();
   }
 };
 /*! Bundled license information:

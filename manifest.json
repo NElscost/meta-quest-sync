@@ -1,8 +1,8 @@
 {
   "id": "meta-quest-sync",
   "name": "Meta Quest Sync",
-  "version": "0.1.19",
-  "minAppVersion": "1.8.0",
+  "version": "0.1.20",
+  "minAppVersion": "1.8.7",
   "description": "Connect and pair a WebXR viewer to explore your vault in mixed reality on Meta Quest.",
   "author": "NElscost",
   "authorUrl": "https://github.com/NElscost",

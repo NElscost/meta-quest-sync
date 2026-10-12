@@ -22,7 +22,7 @@ test("registers explicit IUCN and FASTA blocks", async () => {
 
 test("localizes the IUCN scale embedded in species notes", async () => {
   const speciesMap = await readFile(new URL("../src/species-map.ts", import.meta.url), "utf8");
-  assert.match(speciesMap, /tr\("Pouco Preocupante","Least Concern"\)/);
-  assert.match(speciesMap, /tr\("Ameaçada","Threatened"\)/);
+  assert.match(speciesMap, /tr\("Pouco preocupante",\s*"Least concern"\)/);
+  assert.match(speciesMap, /tr\("Ameaçada",\s*"Threatened"\)/);
   assert.doesNotMatch(speciesMap, /labels\.innerHTML/);
 });

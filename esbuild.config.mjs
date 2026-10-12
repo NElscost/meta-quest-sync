@@ -2,7 +2,7 @@ import esbuild from "esbuild";
 import process from "node:process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import builtins from "builtin-modules";
+import { builtinModules as builtins } from "node:module";
 
 const production = process.argv[2] === "production";
 const projectRoot = path.dirname(fileURLToPath(import.meta.url));

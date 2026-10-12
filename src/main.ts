@@ -9,7 +9,9 @@ import {
   Plugin,
   PluginSettingTab,
   Setting,
+  type SettingDefinitionRender,
   debounce,
+  requireApiVersion,
   requestUrl
 } from "obsidian";
 import { exportVaultGraph } from "./graph-exporter";
@@ -20,6 +22,8 @@ import { renderIucnStatus, renderSpeciesMap } from "./species-map";
 import { renderIucn } from "./iucn";
 import { renderFasta } from "./fasta";
 import { AudioSpectralRenderChild } from "./audio-spectral";
+import { setPluginApp } from "./plugin-context";
+import { objectValue } from "./species-data";
 
 interface ObsidianArSettings {
   interfaceLanguage: LanguagePreference;
@@ -122,6 +126,7 @@ export default class ObsidianArPlugin extends Plugin {
   }, 1500, true);
 
   async onload(): Promise<void> {
+    setPluginApp(this.app);
     await this.loadSettings();
     setLanguagePreference(this.settings.interfaceLanguage);
     this.sessionStatus = tr("Nenhuma sessão conectada.", "No session connected.");
@@ -173,6 +178,7 @@ export default class ObsidianArPlugin extends Plugin {
 
   onunload(): void {
     this.exportGraphDebounced.cancel();
+    setPluginApp(null);
   }
 
   private vaultPath(): string {
@@ -264,9 +270,7 @@ export default class ObsidianArPlugin extends Plugin {
   private async analyzeAudio(notePath: string, source: string): Promise<unknown> {
     if (!this.activeSession) this.activeSession = await this.sessionManager.attach(this.settings);
     if (!this.activeSession) {
-      const accepted = window.confirm(tr("Nenhuma ponte de análise está ativa. Deseja iniciá-la agora em segundo plano?", "No analysis bridge is active. Start it now in the background?"));
-      if (!accepted) throw new Error(tr("A análise foi cancelada porque a ponte não está ativa.", "Analysis was cancelled because the bridge is not active."));
-      if (!(await this.startAr(undefined, false))) throw new Error(tr("Não foi possível iniciar a ponte de análise.", "Could not start the analysis bridge."));
+      throw new Error(tr("A ponte não está ativa na porta 8765. Inicie-a pelo projeto auxiliar e tente novamente.", "The bridge is not running on port 8765. Start it from the companion project and try again."));
     }
     const session = this.activeSession;
     if (!session) throw new Error(tr("A sessão de análise não está ativa.", "The analysis session is not active."));
@@ -318,7 +322,14 @@ export default class ObsidianArPlugin extends Plugin {
   }
 
   async loadSettings(): Promise<void> {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const stored = objectValue(await this.loadData() as unknown);
+    this.settings = { ...DEFAULT_SETTINGS };
+    for (const key of ["projectRoot", "viewerUrl", "tunnelUrl", "tunnelTokenFile", "excludedFolders", "excludedTags"] as const) {
+      if (typeof stored[key] === "string") this.settings[key] = stored[key];
+    }
+    if (stored.interfaceLanguage === "en") this.settings.interfaceLanguage = "en";
+    if (stored.tunnelMode === "named") this.settings.tunnelMode = "named";
+    if (typeof stored.autoExport === "boolean") this.settings.autoExport = stored.autoExport;
   }
 
   async saveSettings(): Promise<void> {
@@ -327,116 +338,77 @@ export default class ObsidianArPlugin extends Plugin {
 }
 
 class ObsidianArSettingTab extends PluginSettingTab {
-  constructor(app: App, private readonly plugin: ObsidianArPlugin) {
-    super(app, plugin);
+  constructor(app: App, private readonly plugin: ObsidianArPlugin) { super(app, plugin); }
+
+  getSettingDefinitions(): SettingDefinitionRender[] {
+    const fields: SettingDefinitionRender[] = [];
+    const text = (key: "projectRoot" | "viewerUrl" | "tunnelUrl" | "tunnelTokenFile" | "excludedFolders" | "excludedTags", name: string, desc: string, multiline = false) => {
+      fields.push({ name, desc, render: setting => {
+        const configure = (control: import("obsidian").TextComponent | import("obsidian").TextAreaComponent) => {
+          control.setValue(this.plugin.settings[key]).onChange(async value => {
+            this.plugin.settings[key] = value.trim();
+            await this.plugin.saveSettings();
+          });
+        };
+        if (multiline) setting.addTextArea(configure); else setting.addText(configure);
+      } });
+    };
+    fields.push({ name: tr("Idioma da interface", "Interface language"),
+      desc: tr("Use o idioma do Obsidian ou selecione inglês.", "Use the Obsidian language or select English."),
+      render: setting => { setting.addDropdown(control => control.addOption("system", tr("Idioma do sistema", "System language"))
+        .addOption("en", "English").setValue(this.plugin.settings.interfaceLanguage).onChange(async value => {
+          this.plugin.settings.interfaceLanguage = value === "en" ? "en" : "system";
+          setLanguagePreference(this.plugin.settings.interfaceLanguage);
+          await this.plugin.saveSettings(); this.refreshSettings();
+        })); } });
+    text("projectRoot", tr("Pasta do projeto", "Project folder"), tr("Pasta absoluta do clone Obsidian-Ar.", "Absolute path to the Obsidian-Ar clone."));
+    text("viewerUrl", tr("Visualizador HTTPS", "HTTPS viewer"), tr("Site WebXR aberto pelo QR code.", "WebXR site opened by the QR code."));
+    fields.push({ name: tr("Porta local", "Local port"), desc: "8765", render: setting => {
+      setting.addText(control => control.setValue("8765").setDisabled(true));
+    } });
+    fields.push({ name: tr("Tipo de túnel", "Tunnel type"), render: setting => {
+      setting.addDropdown(control => control.addOption("quick", "Cloudflare quick tunnel")
+        .addOption("named", "Cloudflare named tunnel").setValue(this.plugin.settings.tunnelMode).onChange(async value => {
+          this.plugin.settings.tunnelMode = value === "named" ? "named" : "quick";
+          await this.plugin.saveSettings(); this.refreshSettings();
+        }));
+    } });
+    // Keep the definitions searchable even when quick-tunnel mode is selected.
+    text("tunnelUrl", tr("URL do túnel nomeado", "Named tunnel URL"), tr("Usado no modo named.", "Used in named mode."));
+    text("tunnelTokenFile", tr("Arquivo do token do túnel", "Tunnel token file"), tr("Arquivo do projeto auxiliar.", "File in the companion project."));
+    text("excludedFolders", tr("Pastas excluídas", "Excluded folders"), tr("Uma pasta por linha ou separada por vírgulas.", "One folder per line or separated by commas."), true);
+    text("excludedTags", tr("Tags excluídas", "Excluded tags"), tr("Inclua #; separe por linhas ou vírgulas.", "Include #; separate with lines or commas."), true);
+    fields.push({ name: tr("Atualizar grafo automaticamente", "Update graph automatically"), render: setting => {
+      setting.addToggle(control => control.setValue(this.plugin.settings.autoExport).onChange(async value => {
+        this.plugin.settings.autoExport = value; await this.plugin.saveSettings();
+      }));
+    } });
+    fields.push({ name: tr("Sessão AR", "AR session"), desc: this.plugin.sessionStatus, render: setting => {
+      setting.addButton(button => button.setCta().setButtonText(tr("Conectar", "Connect")).onClick(() => {
+        button.setDisabled(true);
+        void this.plugin.startAr(message => { setting.setDesc(message); }).finally(() => { button.setDisabled(false); });
+      })).addButton(button => button.setButtonText(tr("Desconectar", "Disconnect")).onClick(() => {
+        void this.plugin.stopAr(); setting.setDesc(this.plugin.sessionStatus);
+      }));
+    } });
+    return fields;
   }
 
-  display(): void {
-    const { containerEl } = this;
-    containerEl.empty();
-    new Setting(containerEl)
-      .setName(tr("Idioma da interface", "Interface language"))
-      .setDesc(tr("Use o idioma do Obsidian/sistema ou force o inglês.", "Use the Obsidian/system language or force English."))
-      .addDropdown((dropdown) => dropdown
-        .addOption("system", tr("Idioma do sistema", "System language"))
-        .addOption("en", "English")
-        .setValue(this.plugin.settings.interfaceLanguage)
-        .onChange(async (value: LanguagePreference) => {
-          this.plugin.settings.interfaceLanguage = value;
-          setLanguagePreference(value);
-          await this.plugin.saveSettings();
-          this.display();
-        }));
-    new Setting(containerEl)
-      .setName(tr("Pasta do projeto", "Project folder"))
-      .setDesc(tr("Pasta absoluta do clone Obsidian-Ar que contém Scripts e note-bridge-rs.", "Absolute path to the Obsidian-Ar clone containing Scripts and note-bridge-rs."))
-      .addText((text) => text
-        .setPlaceholder("C:\\Projetos\\Obsidian-Ar")
-        .setValue(this.plugin.settings.projectRoot)
-        .onChange(async (value) => {
-          this.plugin.settings.projectRoot = value.trim();
-          await this.plugin.saveSettings();
-        }));
-    new Setting(containerEl)
-      .setName(tr("Visualizador HTTPS", "HTTPS viewer"))
-      .setDesc(tr("Site WebXR que será aberto pelo QR Code.", "WebXR site opened by the QR code."))
-      .addText((text) => text
-        .setValue(this.plugin.settings.viewerUrl)
-        .onChange(async (value) => {
-          this.plugin.settings.viewerUrl = value.trim();
-          await this.plugin.saveSettings();
-        }));
-    new Setting(containerEl)
-      .setName(tr("Porta local", "Local port"))
-      .setDesc(tr("Porta usada pela ponte Axum.", "Port used by the Axum bridge."))
-      .addText((text) => text
-        .setValue(String(this.plugin.settings.port))
-        .onChange(async (value) => {
-          const port = Number.parseInt(value, 10);
-          if (port >= 1024 && port <= 65535) this.plugin.settings.port = port;
-          await this.plugin.saveSettings();
-        }));
-    new Setting(containerEl)
-      .setName(tr("Tipo de túnel", "Tunnel type"))
-      .setDesc(tr("Quick Tunnel é temporário; Named Tunnel é indicado para uso recorrente.", "Quick Tunnel is temporary; Named Tunnel is recommended for recurring use."))
-      .addDropdown((dropdown) => dropdown
-        .addOption("quick", "Cloudflare Quick Tunnel")
-        .addOption("named", "Cloudflare Named Tunnel")
-        .setValue(this.plugin.settings.tunnelMode)
-        .onChange(async (value: "quick" | "named") => {
-          this.plugin.settings.tunnelMode = value;
-          await this.plugin.saveSettings();
-          this.display();
-        }));
-    if (this.plugin.settings.tunnelMode === "named") {
-      new Setting(containerEl)
-        .setName(tr("URL do Named Tunnel", "Named Tunnel URL"))
-        .addText((text) => text.setValue(this.plugin.settings.tunnelUrl).onChange(async (value) => {
-          this.plugin.settings.tunnelUrl = value.trim();
-          await this.plugin.saveSettings();
-        }));
-      new Setting(containerEl)
-        .setName(tr("Arquivo do token do túnel", "Tunnel token file"))
-        .addText((text) => text.setValue(this.plugin.settings.tunnelTokenFile).onChange(async (value) => {
-          this.plugin.settings.tunnelTokenFile = value.trim();
-          await this.plugin.saveSettings();
-        }));
-    }
-    new Setting(containerEl)
-      .setName(tr("Pastas excluídas", "Excluded folders"))
-      .setDesc(tr("Uma pasta por linha ou separada por vírgulas.", "One folder per line or separated by commas."))
-      .addTextArea((text) => text.setValue(this.plugin.settings.excludedFolders).onChange(async (value) => {
-        this.plugin.settings.excludedFolders = value;
-        await this.plugin.saveSettings();
-      }));
-    new Setting(containerEl)
-      .setName(tr("Tags excluídas", "Excluded tags"))
-      .setDesc(tr("Inclua #. Uma tag por linha ou separada por vírgulas.", "Include #. Enter one tag per line or separate them with commas."))
-      .addTextArea((text) => text.setValue(this.plugin.settings.excludedTags).onChange(async (value) => {
-        this.plugin.settings.excludedTags = value;
-        await this.plugin.saveSettings();
-      }));
-    new Setting(containerEl)
-      .setName(tr("Atualizar grafo automaticamente", "Update graph automatically"))
-      .setDesc(tr("Reexporta o snapshot após alterações no vault, com debounce.", "Re-exports the snapshot after vault changes, with debounce."))
-      .addToggle((toggle) => toggle.setValue(this.plugin.settings.autoExport).onChange(async (value) => {
-        this.plugin.settings.autoExport = value;
-        await this.plugin.saveSettings();
-      }));
-    const sessionSetting = new Setting(containerEl)
-      .setName(tr("Sessão AR", "AR session"))
-      .setDesc(this.plugin.sessionStatus);
-    sessionSetting
-      .addButton((button) => button.setCta().setButtonText(tr("Conectar", "Connect")).onClick(async () => {
-        button.setDisabled(true).setButtonText(tr("Conectando…", "Connecting…"));
-        try {
-          await this.plugin.startAr((message) => sessionSetting.setDesc(message));
-        } finally {
-          button.setDisabled(false).setButtonText(tr("Conectar", "Connect"));
-        }
-      }))
-      .addButton((button) => button.setWarning().setButtonText(tr("Desconectar", "Disconnect")).onClick(() => {
-        void this.plugin.stopAr();
-      }));
+  private refreshSettings(): void {
+    if (requireApiVersion("1.13.0")) this.update();
+    else this.renderSettings();
   }
+
+  private renderSettings(): void {
+    this.containerEl.empty();
+    for (const definition of this.getSettingDefinitions()) {
+      const setting = new Setting(this.containerEl).setName(definition.name);
+      if (definition.desc) setting.setDesc(definition.desc);
+      // These render callbacks only consume the Setting, including on older Obsidian.
+      (definition.render as (setting: Setting) => void)(setting);
+    }
+  }
+
+  // Fallback for Obsidian releases before declarative settings were introduced.
+  display(): void { this.renderSettings(); }
 }

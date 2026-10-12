@@ -47,9 +47,8 @@ test("usa português do sistema e inglês como fallback", async () => {
     readFile(pairingUrl, "utf8"),
     readFile(i18nUrl, "utf8")
   ]);
-  assert.match(i18n, /localStorage\?\.getItem\("language"\)/);
-  assert.match(i18n, /documentElement\?\.lang/);
-  assert.match(i18n, /navigator\?\.languages\?\.\[0\]/);
+  assert.match(i18n, /getLanguage\(\)/);
+  assert.doesNotMatch(i18n, /localStorage|globalThis/);
   assert.match(i18n, /startsWith\("pt"\)/);
   assert.match(main, /interfaceLanguage: LanguagePreference/);
   assert.match(main, /tr\("Idioma da interface", "Interface language"\)/);

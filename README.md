@@ -86,7 +86,9 @@ zoom: 2
 style: classic.point
 ```
 
-<video src="https://github.com/NElscost/meta-quest-sync/raw/refs/heads/main/video/Sound%20Analyser.mp4" controls preload="none" aria-label="Species map and 3D sound trail demonstration"></video>
+<video src="https://github.com/NElscost/meta-quest-sync/raw/refs/heads/main/video/Sound%20Analyser.mp4" poster="https://raw.githubusercontent.com/NElscost/meta-quest-sync/main/assets/sound-analyser-thumbnail.png" controls preload="none" aria-label="Species map and 3D sound trail demonstration"></video>
+
+[![Species map and 3D sound trail demonstration](assets/sound-analyser-thumbnail.png)](video/Sound%20Analyser.mp4)
 
 [Watch the species map and sound analyser demonstration](video/Sound%20Analyser.mp4).
 
